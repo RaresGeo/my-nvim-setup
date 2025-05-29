@@ -96,37 +96,37 @@ return {
 			end
 
 			pickers
-				.new({}, {
-					prompt_title = "Recent Files",
-					finder = finders.new_table({
-						results = entries,
-						entry_maker = function(entry)
-							return {
-								display = entry.display,
-								ordinal = entry.ordinal,
-								value = entry.value,
-								index = entry.index,
-								path = entry.value, -- Required for preview
-							}
-						end,
-					}),
-					sorter = conf.generic_sorter({}),
-					previewer = conf.file_previewer({}), -- Add file preview
-					default_selection_index = 2, -- Start with second entry selected
-					attach_mappings = function(prompt_bufnr, map)
-						actions.select_default:replace(function()
-							local selection = action_state.get_selected_entry()
-							actions.close(prompt_bufnr)
-							if selection then
-								vim.cmd("edit " .. selection.value)
-								-- Move selected file to front of recent list
-								add_recent_file(selection.value)
-							end
-						end)
-						return true
-					end,
-				})
-				:find()
+			    .new({}, {
+				    prompt_title = "Recent Files",
+				    finder = finders.new_table({
+					    results = entries,
+					    entry_maker = function(entry)
+						    return {
+							    display = entry.display,
+							    ordinal = entry.ordinal,
+							    value = entry.value,
+							    index = entry.index,
+							    path = entry.value, -- Required for preview
+						    }
+					    end,
+				    }),
+				    sorter = conf.generic_sorter({}),
+				    previewer = conf.file_previewer({}), -- Add file preview
+				    default_selection_index = 2, -- Start with second entry selected
+				    attach_mappings = function(prompt_bufnr, map)
+					    actions.select_default:replace(function()
+						    local selection = action_state.get_selected_entry()
+						    actions.close(prompt_bufnr)
+						    if selection then
+							    vim.cmd("edit " .. selection.value)
+							    -- Move selected file to front of recent list
+							    add_recent_file(selection.value)
+						    end
+					    end)
+					    return true
+				    end,
+			    })
+			    :find()
 		end
 
 		-- Auto command to track file opens
@@ -182,7 +182,8 @@ return {
 					return
 				end
 
-				print("No recent terminals found")
+				print("No recent terminals found, opening a new one")
+				open_terminal_in_current_dir()
 			end
 		end
 		-- Make functions available globally
@@ -201,7 +202,8 @@ return {
 		-- Key mappings
 		vim.keymap.set("n", "<C-;>", show_recent_files_picker, { desc = "Show recent files picker" })
 		vim.keymap.set("n", "<leader><Tab>", show_recent_files_picker, { desc = "Show recent files picker" })
-		vim.keymap.set("n", "<leader>`", toggle_recent_terminal_file, { desc = "Toggle between recent terminal and file" })
+		vim.keymap.set("n", "<leader>`", toggle_recent_terminal_file,
+			{ desc = "Toggle between recent terminal and file" })
 		vim.keymap.set("t", "<leader>`", function()
 			-- Exit terminal mode first, then call the function
 			vim.cmd("stopinsert")

@@ -5,6 +5,7 @@ vim.g.mapleader = " "
 require("config.lazy")
 
 -- Load configuration modules
+require("core.functions")
 require("core.options")
 require("core.keymaps")
 require("core.autocmds")

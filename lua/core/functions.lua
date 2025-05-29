@@ -1,0 +1,15 @@
+_G.open_terminal_in_current_dir = function()
+	local current_file = vim.fn.expand("%:p")
+	local dir
+	if current_file ~= "" and vim.fn.filereadable(current_file) == 1 then
+		-- Get directory of current file
+		dir = vim.fn.fnamemodify(current_file, ":h")
+	else
+		-- Fallback to current working directory
+		dir = vim.fn.getcwd()
+	end
+	vim.cmd("terminal")
+	-- Change to the directory in the terminal
+	vim.fn.chansend(vim.b.terminal_job_id, "cd " .. vim.fn.shellescape(dir) .. "\r")
+	vim.cmd("startinsert")
+end

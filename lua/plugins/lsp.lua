@@ -20,7 +20,7 @@ return {
 			vim.keymap.set("n", "gi", vim.lsp.buf.implementation, opts)
 			vim.keymap.set("n", "gr", vim.lsp.buf.references, opts)
 			vim.keymap.set("n", "K", vim.lsp.buf.hover, opts)
-			vim.keymap.set("n", "<C-k>", vim.lsp.buf.signature_help, opts)
+			vim.keymap.set({ "n", "i" }, "<C-k>", vim.lsp.buf.signature_help, opts)
 
 			-- Code actions
 			vim.keymap.set("n", "<leader>ca", vim.lsp.buf.code_action, opts)
@@ -42,41 +42,29 @@ return {
 				})
 			end
 		end
+		-- Helper function to check if we're in a Deno project
+		local function is_deno_project(fname)
+			return lspconfig.util.root_pattern("deno.json", "deno.jsonc")(fname) ~= nil
+		end
 
 		-- TypeScript/JavaScript Language Server
 		lspconfig.ts_ls.setup({
 			capabilities = capabilities,
 			on_attach = on_attach,
+			root_dir = function(fname)
+				if is_deno_project(fname) then
+					return nil -- Explicitly prevent ts_ls in Deno projects
+				end
+				return lspconfig.util.root_pattern("package.json", "tsconfig.json", "jsconfig.json")(fname)
+			end,
+			single_file_support = false, -- Prevent ts_ls from starting on single files
 			filetypes = {
 				"javascript",
 				"javascriptreact",
 				"typescript",
 				"typescriptreact",
 			},
-			settings = {
-				typescript = {
-					inlayHints = {
-						includeInlayParameterNameHints = "all",
-						includeInlayParameterNameHintsWhenArgumentMatchesName = false,
-						includeInlayFunctionParameterTypeHints = true,
-						includeInlayVariableTypeHints = true,
-						includeInlayPropertyDeclarationTypeHints = true,
-						includeInlayFunctionLikeReturnTypeHints = true,
-						includeInlayEnumMemberValueHints = true,
-					},
-				},
-				javascript = {
-					inlayHints = {
-						includeInlayParameterNameHints = "all",
-						includeInlayParameterNameHintsWhenArgumentMatchesName = false,
-						includeInlayFunctionParameterTypeHints = true,
-						includeInlayVariableTypeHints = true,
-						includeInlayPropertyDeclarationTypeHints = true,
-						includeInlayFunctionLikeReturnTypeHints = true,
-						includeInlayEnumMemberValueHints = true,
-					},
-				},
-			},
+			-- ... rest of your settings
 		})
 
 		-- Deno Language Server
@@ -84,22 +72,8 @@ return {
 			capabilities = capabilities,
 			on_attach = on_attach,
 			root_dir = lspconfig.util.root_pattern("deno.json", "deno.jsonc"),
-			settings = {
-				deno = {
-					enable = true,
-					lint = true,
-					unstable = true,
-					suggest = {
-						imports = {
-							hosts = {
-								["https://deno.land"] = true,
-								["https://cdn.nest.land"] = true,
-								["https://crux.land"] = true,
-							},
-						},
-					},
-				},
-			},
+			single_file_support = false,
+			-- ... rest of your settings
 		})
 
 		-- Scala Language Server (Metals)

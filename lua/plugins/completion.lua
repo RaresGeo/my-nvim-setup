@@ -35,7 +35,21 @@ return {
 					["<C-f>"] = cmp.mapping.scroll_docs(4),
 					["<C-Space>"] = cmp.mapping.complete(),
 					["<C-e>"] = cmp.mapping.abort(),
-					["<CR>"] = cmp.mapping.confirm({ select = true }),
+					["<CR>"] = cmp.mapping(function(fallback)
+						if cmp.visible() then
+							local entry = cmp.get_selected_entry()
+							if entry then
+								cmp.confirm({
+									behavior = cmp.ConfirmBehavior.Replace,
+									select = true,
+								})
+							else
+								fallback()
+							end
+						else
+							fallback()
+						end
+					end),
 
 					-- Tab and Shift-Tab for snippet navigation
 					["<Tab>"] = cmp.mapping(function(fallback)
@@ -97,8 +111,7 @@ return {
 							TypeParameter = "",
 						}
 
-						vim_item.kind = string.format("%s %s", icons[vim_item.kind] or "",
-							vim_item.kind)
+						vim_item.kind = string.format("%s %s", icons[vim_item.kind] or "", vim_item.kind)
 						vim_item.menu = ({
 							nvim_lsp = "[LSP]",
 							luasnip = "[Snippet]",
