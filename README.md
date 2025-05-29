@@ -46,6 +46,7 @@ After each update, it will open a floating window with some commands. You can fo
 - **Lua** (lua_ls)
 - **Deno** support
 - Auto-completion with **nvim-cmp** and **cmp-emmet-vim**
+- Auto-pairs with **nvim-autopairs**
 
 ### ✨ **Developer Experience**
 
@@ -53,6 +54,7 @@ After each update, it will open a floating window with some commands. You can fo
 - Intelligent commenting with context awareness (also works in jsx/tsx)
 - Snippet support
 - LSP-powered code navigation and actions
+- Git blame
 
 ## Important Keymaps
 
