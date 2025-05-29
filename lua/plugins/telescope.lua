@@ -134,13 +134,14 @@ return {
 		vim.api.nvim_create_autocmd({ "BufEnter", "BufWinEnter" }, {
 			group = augroup,
 			pattern = "*",
-			callback = function()
-				local filepath = vim.fn.expand("%:p")
-				-- Only track actual files (not empty buffers, help, etc.)
-				if filepath ~= "" and vim.fn.filereadable(filepath) == 1 then
-					-- Check if it's a regular file (not help, terminal, etc.)
-					local buftype = vim.bo.buftype
-					local filetype = vim.bo.filetype
+			callback = function(ev)
+				local bufnr = ev.buf
+				local filepath = vim.api.nvim_buf_get_name(bufnr)
+				local buftype = vim.bo[bufnr].buftype
+
+				-- Only track regular files, not terminals
+				if filepath ~= "" and vim.fn.filereadable(filepath) == 1 and buftype ~= "terminal" then
+					local filetype = vim.bo[bufnr].filetype
 					if buftype == "" and filetype ~= "help" and filetype ~= "qf" then
 						add_recent_file(filepath)
 					end
@@ -148,10 +149,47 @@ return {
 			end,
 		})
 
+		local function toggle_recent_terminal_file()
+			print("Toggling recent terminal")
+			local current_buftype = vim.bo.buftype
+
+			if current_buftype == "terminal" then
+				-- We're in a terminal, find most recent non-terminal file from recent_files
+				for _, filepath in ipairs(recent_files) do
+					vim.cmd("edit " .. filepath)
+					return
+				end
+				print("No recent files found")
+			else
+				-- We're in a regular file, find most recent terminal from all buffers
+				local terminal_bufs = {}
+				for _, bufnr in ipairs(vim.api.nvim_list_bufs()) do
+					if vim.api.nvim_buf_is_loaded(bufnr) and vim.bo[bufnr].buftype == "terminal" then
+						table.insert(terminal_bufs, {
+							bufnr = bufnr,
+							lastused = vim.fn.getbufinfo(bufnr)[1].lastused,
+						})
+					end
+				end
+
+				if #terminal_bufs > 0 then
+					-- Sort by most recently used
+					table.sort(terminal_bufs, function(a, b)
+						return a.lastused > b.lastused
+					end)
+					vim.cmd("buffer " .. terminal_bufs[1].bufnr)
+					vim.cmd("startinsert")
+					return
+				end
+
+				print("No recent terminals found")
+			end
+		end
 		-- Make functions available globally
 		_G.RecentFiles = {
 			show_picker = show_recent_files_picker,
 			add_file = add_recent_file,
+			toggle_terminal_file = toggle_recent_terminal_file,
 			get_recent = function()
 				return recent_files
 			end,
@@ -163,5 +201,11 @@ return {
 		-- Key mappings
 		vim.keymap.set("n", "<C-;>", show_recent_files_picker, { desc = "Show recent files picker" })
 		vim.keymap.set("n", "<leader><Tab>", show_recent_files_picker, { desc = "Show recent files picker" })
+		vim.keymap.set("n", "<leader>`", toggle_recent_terminal_file, { desc = "Toggle between recent terminal and file" })
+		vim.keymap.set("t", "<leader>`", function()
+			-- Exit terminal mode first, then call the function
+			vim.cmd("stopinsert")
+			toggle_recent_terminal_file()
+		end, { desc = "Toggle between recent terminal and file" })
 	end,
 }

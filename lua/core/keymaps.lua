@@ -19,6 +19,24 @@ vim.keymap.set("n", "<C-S-N>", function()
 	harpoon:list():next()
 end, { desc = "Next harpoon file" })
 
+vim.keymap.set("n", "<leader>tt", function()
+	local current_file = vim.fn.expand("%:p")
+	local dir
+
+	if current_file ~= "" and vim.fn.filereadable(current_file) == 1 then
+		-- Get directory of current file
+		dir = vim.fn.fnamemodify(current_file, ":h")
+	else
+		-- Fallback to current working directory
+		dir = vim.fn.getcwd()
+	end
+
+	vim.cmd("terminal")
+	-- Change to the directory in the terminal
+	vim.fn.chansend(vim.b.terminal_job_id, "cd " .. vim.fn.shellescape(dir) .. "\r")
+	vim.cmd("startinsert")
+end, { desc = "Open terminal in current file's directory" })
+
 -- Telescope keymaps
 local builtin = require("telescope.builtin")
 
@@ -26,6 +44,28 @@ vim.keymap.set("n", "<leader>ff", builtin.find_files, { desc = "Find files" })
 vim.keymap.set("n", "<leader>fg", builtin.live_grep, { desc = "Live grep" })
 vim.keymap.set("n", "<leader>fb", builtin.buffers, { desc = "Find buffers" })
 vim.keymap.set("n", "<leader>fh", builtin.help_tags, { desc = "Help tags" })
+vim.keymap.set("n", "<leader>ft", function()
+	local terminal_bufs = {}
+	for _, bufnr in ipairs(vim.api.nvim_list_bufs()) do
+		if vim.bo[bufnr].buftype == "terminal" and vim.api.nvim_buf_is_loaded(bufnr) then
+			table.insert(terminal_bufs, bufnr)
+		end
+	end
+
+	if #terminal_bufs == 0 then
+		print("No terminal buffers found")
+		return
+	end
+
+	builtin.buffers({
+		bufnr_width = 3,
+		show_all_buffers = false,
+		ignore_current_buffer = false,
+		sort_mru = true,
+		-- Pass only terminal buffer numbers
+		default_text = "term://",
+	})
+end, { desc = "Find terminal buffers" })
 
 local conf = require("telescope.config").values
 local function toggle_telescope(harpoon_files)

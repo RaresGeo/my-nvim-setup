@@ -38,6 +38,7 @@ After each update, it will open a floating window with some commands. You can fo
 - **Oil.nvim** for file exploration
 - **Harpoon** for quick file switching
 - Custom recent files picker (I wanted to mimick the functionality of ctrl + tab in VSCode)
+- Toggle between most recent file and most recent terminal `(<Space>\`)`
 
 ### 💻 **Language Support**
 
