@@ -58,6 +58,7 @@ return {
 				sources = cmp.config.sources({
 					{ name = "nvim_lsp" }, -- LSP completions
 					{ name = "luasnip" }, -- Snippet completions
+					{ name = "emmet_vim" }, -- Emmet completions for jsx/tsx
 				}, {
 					{ name = "buffer" }, -- Buffer completions
 					{ name = "path" }, -- Path completions
@@ -93,7 +94,8 @@ return {
 							TypeParameter = "",
 						}
 
-						vim_item.kind = string.format("%s %s", icons[vim_item.kind] or "", vim_item.kind)
+						vim_item.kind = string.format("%s %s", icons[vim_item.kind] or "",
+							vim_item.kind)
 						vim_item.menu = ({
 							nvim_lsp = "[LSP]",
 							luasnip = "[Snippet]",

@@ -9,8 +9,9 @@ This, I find, strikes a good balance.
 Off the top of my head, below are listed some of the dependencies you will need to run this configuration.
 
 ### Required
+
 - **Neovim** >= 0.9.0
-- **Git** 
+- **Git**
 - **Node.js** and **npm** (for TypeScript/JavaScript LSP, I personally use `volta` for this)
 - **ripgrep** (`rg`) - Fast file searching for Telescope and ignoring .gitignored files
 - **coursier** (`cs`) - Scala artifact fetching, you will use this to install metals
@@ -27,23 +28,27 @@ After each update, it will open a floating window with some commands. You can fo
 ## Key Features
 
 ### 🎨 **Appearance**
+
 - **Catppuccin Mocha** colorscheme
 - **Treesitter** syntax highlighting
 
 ### 🔍 **File Navigation**
+
 - **Telescope** for fuzzy finding files, buffers, and live grep
 - **Oil.nvim** for file exploration
 - **Harpoon** for quick file switching
 - Custom recent files picker (I wanted to mimick the functionality of ctrl + tab in VSCode)
 
 ### 💻 **Language Support**
+
 - **TypeScript/JavaScript** (ts_ls)
 - **Scala** (Metals)
 - **Lua** (lua_ls)
 - **Deno** support
-- Auto-completion with **nvim-cmp**
+- Auto-completion with **nvim-cmp** and **cmp-emmet-vim**
 
 ### ✨ **Developer Experience**
+
 - Auto-formatting on save
 - Intelligent commenting with context awareness (also works in jsx/tsx)
 - Snippet support
@@ -52,76 +57,87 @@ After each update, it will open a floating window with some commands. You can fo
 ## Important Keymaps
 
 ### Leader Key
+
 - Leader key is set to `<Space>`
 
 ### File Navigation
-| Keymap | Action |
-|--------|--------|
-| `<leader>e` | Open file explorer (Oil) |
-| `<leader>ff` | Find files (Telescope) |
-| `<leader>fg` | Live grep (Telescope) |
-| `<leader>fb` | Find buffers (Telescope) |
-| `<leader>fh` | Help tags (Telescope) |
-| `<C-;>` or `<leader><Tab>` | Recent files picker |
+
+| Keymap                     | Action                   |
+| -------------------------- | ------------------------ |
+| `<leader>e`                | Open file explorer (Oil) |
+| `<leader>ff`               | Find files (Telescope)   |
+| `<leader>fg`               | Live grep (Telescope)    |
+| `<leader>fb`               | Find buffers (Telescope) |
+| `<leader>fh`               | Help tags (Telescope)    |
+| `<C-;>` or `<leader><Tab>` | Recent files picker      |
 
 ### Harpoon (Quick File Switching)
-| Keymap | Action |
-|--------|--------|
-| `<leader>a` | Add file to harpoon |
-| `<C-e>` | Open harpoon window |
-| `<C-S-P>` | Previous harpoon file |
-| `<C-S-N>` | Next harpoon file |
+
+| Keymap      | Action                |
+| ----------- | --------------------- |
+| `<leader>a` | Add file to harpoon   |
+| `<C-e>`     | Open harpoon window   |
+| `<C-S-P>`   | Previous harpoon file |
+| `<C-S-N>`   | Next harpoon file     |
 
 ### LSP & Code Navigation
-| Keymap | Action |
-|--------|--------|
-| `gd` | Go to definition |
-| `gD` | Go to declaration |
-| `gi` | Go to implementation |
-| `gr` | Go to references |
-| `K` | Show hover information |
-| `<leader>ca` | Code actions |
-| `<leader>rn` | Rename symbol |
-| `<leader>f` | Format buffer |
+
+| Keymap       | Action                 |
+| ------------ | ---------------------- |
+| `gd`         | Go to definition       |
+| `gD`         | Go to declaration      |
+| `gi`         | Go to implementation   |
+| `gr`         | Go to references       |
+| `K`          | Show hover information |
+| `<leader>ca` | Code actions           |
+| `<leader>rn` | Rename symbol          |
+| `<leader>f`  | Format buffer          |
 
 ### Diagnostics
-| Keymap | Action |
-|--------|--------|
-| `]d` | Next diagnostic |
-| `[d` | Previous diagnostic |
-| `<leader>e` | Open diagnostic float |
+
+| Keymap      | Action                           |
+| ----------- | -------------------------------- |
+| `]d`        | Next diagnostic                  |
+| `[d`        | Previous diagnostic              |
+| `<leader>d` | Open diagnostic float            |
 | `<leader>q` | Add diagnostics to location list |
 
 ### Commenting
-| Keymap | Action |
-|--------|--------|
-| `<C-/>` | Toggle line comment |
-| `gcc` | Toggle line comment (normal mode) |
-| `gc` | Toggle comment (visual mode) |
+
+| Keymap  | Action                            |
+| ------- | --------------------------------- |
+| `<C-/>` | Toggle line comment               |
+| `gcc`   | Toggle line comment (normal mode) |
+| `gc`    | Toggle comment (visual mode)      |
 
 ### Metals (Scala) Specific
-| Keymap | Action |
-|--------|--------|
-| `<leader>mt` | Toggle Metals tree view |
-| `<leader>mr` | Reveal in Metals tree |
+
+| Keymap       | Action                    |
+| ------------ | ------------------------- |
+| `<leader>mt` | Toggle Metals tree view   |
+| `<leader>mr` | Reveal in Metals tree     |
 | `<leader>mw` | Metals worksheet commands |
 
 ## Plugin List
 
 ### Core Functionality
+
 - **lazy.nvim** - Plugin manager
 - **plenary.nvim** - Lua utility functions
 
 ### UI & Themes
+
 - **catppuccin/nvim** - Colorscheme
 - **nvim-web-devicons** - File icons
 
 ### File Management
+
 - **telescope.nvim** - Fuzzy finder and picker
 - **oil.nvim** - File explorer
 - **harpoon** - Quick file navigation
 
 ### Language Support
+
 - **nvim-lspconfig** - LSP configurations
 - **nvim-treesitter** - Syntax highlighting
 - **nvim-metals** - Scala language server
@@ -129,6 +145,7 @@ After each update, it will open a floating window with some commands. You can fo
 - **LuaSnip** - Snippet engine
 
 ### Code Quality
+
 - **none-ls.nvim** (null-ls successor) - Formatting and linting
 - **Comment.nvim** - Smart commenting
 - **nvim-ts-context-commentstring** - Context-aware commenting
@@ -155,12 +172,15 @@ After each update, it will open a floating window with some commands. You can fo
 │       ├── null-ls.lua
 │       ├── oil.lua
 │       ├── telescope.lua
-│       └── treesitter.lua
+│       ├── treesitter.lua
+│       └── ....
+
 ```
 
 ## Setup Instructions
 
 1. **Backup existing configuration** (if any):
+
    ```bash
    mv ~/.config/nvim ~/.config/nvim.backup
    ```
@@ -168,6 +188,7 @@ After each update, it will open a floating window with some commands. You can fo
 2. **Clone or copy this configuration** to `~/.config/nvim/`
 
 3. **Start Neovim**:
+
    ```bash
    nvim
    ```
@@ -179,12 +200,15 @@ After each update, it will open a floating window with some commands. You can fo
 ## Language Server Setup
 
 ### TypeScript/JavaScript
+
 The `ts_ls` language server will be automatically installed when you first open a TS/JS file.
 
 ### Scala (Metals)
+
 Metals will prompt you to import your build when you first open a Scala project. Follow the prompts to set up your workspace.
 
 ### Lua
+
 The `lua_ls` server is configured for Neovim configuration development with proper `vim` global recognition.
 
 ## Customization
@@ -204,6 +228,7 @@ This configuration is designed to be easily extensible. To add new plugins:
 ## Performance
 
 This configuration is optimized for performance with:
+
 - Lazy loading of plugins
 - Efficient file searching with ripgrep
 - Modern LSP setup with proper capabilities
