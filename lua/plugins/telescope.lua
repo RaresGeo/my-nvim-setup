@@ -160,6 +160,7 @@ return {
 					return
 				end
 				print("No recent files found")
+				vim.cmd("Oil")
 			else
 				-- We're in a regular file, find most recent terminal from all buffers
 				local terminal_bufs = {}
