@@ -70,6 +70,7 @@ return {
 		end
 
 		-- Function to show recent files picker
+		-- Function to show recent files picker
 		local function show_recent_files_picker()
 			if #recent_files == 0 then
 				print("No recent files")
@@ -87,8 +88,19 @@ return {
 			for i, filepath in ipairs(recent_files) do
 				local filename = vim.fn.fnamemodify(filepath, ":t")
 				local relative_path = vim.fn.fnamemodify(filepath, ":.")
+
+				-- Check if file has unsaved changes
+				local has_unsaved_changes = false
+				local bufnr = vim.fn.bufnr(filepath)
+				if bufnr ~= -1 and vim.api.nvim_buf_is_loaded(bufnr) then
+					has_unsaved_changes = vim.bo[bufnr].modified
+				end
+
+				local modified_indicator = has_unsaved_changes and "* " or " "
+
 				table.insert(entries, {
-					display = string.format("%d: %s (%s)", i, filename, relative_path),
+					display = string.format("%s%d: %s (%s)", modified_indicator, i, filename,
+						relative_path),
 					ordinal = filename .. " " .. relative_path,
 					value = filepath,
 					index = i,
