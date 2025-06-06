@@ -21,15 +21,50 @@ return {
 			cmp.event:on("confirm_done", cmp_autopairs.on_confirm_done())
 
 			cmp.setup({
+				performance = {
+					debounce = 0,
+					throttle = 10,
+					fetching_timeout = 200,
+					confirm_resolve_timeout = 80,
+					async_budget = 1,
+					max_view_entries = 50,
+				},
 				snippet = {
 					expand = function(args)
 						luasnip.lsp_expand(args.body)
 					end,
 				},
+				completion = {
+					completeopt = "menu,menuone,noinsert",
+				},
 				window = {
 					completion = cmp.config.window.bordered(),
 					documentation = cmp.config.window.bordered(),
 				},
+				sources = cmp.config.sources({
+					{
+						name = "nvim_lsp",
+						max_item_count = 20,
+					},
+					{
+						name = "luasnip",
+						max_item_count = 5,
+					},
+					{
+						name = "emmet_vim",
+						max_item_count = 5,
+					},
+				}, {
+					{
+						name = "buffer",
+						max_item_count = 5,
+						keyword_length = 3,
+					},
+					{
+						name = "path",
+						max_item_count = 10,
+					},
+				}),
 				mapping = cmp.mapping.preset.insert({
 					["<C-b>"] = cmp.mapping.scroll_docs(-4),
 					["<C-f>"] = cmp.mapping.scroll_docs(4),
@@ -72,14 +107,6 @@ return {
 						end
 					end, { "i", "s" }),
 				}),
-				sources = cmp.config.sources({
-					{ name = "nvim_lsp" }, -- LSP completions
-					{ name = "luasnip" }, -- Snippet completions
-					{ name = "emmet_vim" }, -- Emmet completions for jsx/tsx
-				}, {
-					{ name = "buffer" }, -- Buffer completions
-					{ name = "path" }, -- Path completions
-				}),
 				formatting = {
 					format = function(entry, vim_item)
 						-- Add icons for different completion types
@@ -111,7 +138,8 @@ return {
 							TypeParameter = "",
 						}
 
-						vim_item.kind = string.format("%s %s", icons[vim_item.kind] or "", vim_item.kind)
+						vim_item.kind = string.format("%s %s", icons[vim_item.kind] or "",
+							vim_item.kind)
 						vim_item.menu = ({
 							nvim_lsp = "[LSP]",
 							luasnip = "[Snippet]",
