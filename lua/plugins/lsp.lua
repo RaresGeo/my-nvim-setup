@@ -1,14 +1,13 @@
 return {
 	"neovim/nvim-lspconfig",
 	dependencies = {
-		"hrsh7th/cmp-nvim-lsp", -- LSP completion source
+		"saghen/blink.cmp", -- Changed from cmp-nvim-lsp to blink.cmp
 	},
 	config = function()
 		local lspconfig = require("lspconfig")
-		local cmp_nvim_lsp = require("cmp_nvim_lsp")
 
-		-- Enhanced capabilities for auto-completion
-		local capabilities = cmp_nvim_lsp.default_capabilities()
+		-- Enhanced capabilities for auto-completion using blink.cmp
+		local capabilities = require("blink.cmp").get_lsp_capabilities()
 
 		-- Key mappings for LSP features
 		local on_attach = function(client, bufnr)
@@ -47,6 +46,31 @@ return {
 			return lspconfig.util.root_pattern("deno.json", "deno.jsonc")(fname) ~= nil
 		end
 
+		-- Emmet Language Server
+		lspconfig.emmet_ls.setup({
+			capabilities = capabilities,
+			on_attach = on_attach,
+			filetypes = {
+				"html",
+				"css",
+				"scss",
+				"javascript",
+				"javascriptreact",
+				"typescript",
+				"typescriptreact",
+				"vue",
+				"svelte",
+			},
+			init_options = {
+				html = {
+					options = {
+						-- For possible options, see: https://github.com/emmetio/emmet/blob/master/src/config.ts#L79-L267
+						["bem.enabled"] = true,
+					},
+				},
+			},
+		})
+
 		-- TypeScript/JavaScript Language Server
 		lspconfig.ts_ls.setup({
 			capabilities = capabilities,
@@ -55,7 +79,8 @@ return {
 				if is_deno_project(fname) then
 					return nil -- Explicitly prevent ts_ls in Deno projects
 				end
-				return lspconfig.util.root_pattern("package.json", "tsconfig.json", "jsconfig.json")(fname)
+				return lspconfig.util.root_pattern("package.json", "tsconfig.json", "jsconfig.json")(
+				fname)
 			end,
 			single_file_support = false, -- Prevent ts_ls from starting on single files
 			filetypes = {
