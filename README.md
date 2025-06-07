@@ -46,7 +46,7 @@ After each update, it will open a floating window with some commands. You can fo
 - **Scala** (Metals)
 - **Lua** (lua_ls)
 - **Deno** support
-- Auto-completion with **nvim-cmp** and **cmp-emmet-vim**
+- Auto-completion with **blink.cmp** and **emmet-ls**
 - Auto-pairs with **nvim-autopairs**
 
 ### ✨ **Developer Experience**
@@ -144,7 +144,7 @@ After each update, it will open a floating window with some commands. You can fo
 - **nvim-lspconfig** - LSP configurations
 - **nvim-treesitter** - Syntax highlighting
 - **nvim-metals** - Scala language server
-- **nvim-cmp** - Auto-completion engine
+- **blink-cmp** - Auto-completion engine
 - **LuaSnip** - Snippet engine
 
 ### Code Quality
