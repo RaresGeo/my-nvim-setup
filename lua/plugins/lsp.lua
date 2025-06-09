@@ -1,3 +1,29 @@
+local function organize_imports()
+	-- Check if this is a Deno project
+	local clients = vim.lsp.get_clients({ bufnr = 0 })
+	local is_node = false
+
+	for _, client in ipairs(clients) do
+		if client.name == "ts_ls" then
+			is_node = true
+			break
+		end
+	end
+
+	if is_node then
+		local params = {
+			command = "_typescript.organizeImports",
+			arguments = { vim.api.nvim_buf_get_name(0) },
+		}
+
+		vim.lsp.buf_request(0, "workspace/executeCommand", params, function(err, result)
+			if err then
+				vim.notify("Error organizing imports: " .. vim.inspect(err), vim.log.levels.ERROR)
+			end
+		end)
+	end
+end
+
 return {
 	"neovim/nvim-lspconfig",
 	dependencies = {
@@ -30,6 +56,9 @@ return {
 			vim.keymap.set("n", "]d", vim.diagnostic.goto_next, opts)
 			vim.keymap.set("n", "<leader>d", vim.diagnostic.open_float, opts)
 			vim.keymap.set("n", "<leader>q", vim.diagnostic.setloclist, opts)
+
+			-- Formatting
+			vim.keymap.set("n", "<leader>oi", organize_imports, { desc = "Organize imports" })
 
 			-- Format on save for TypeScript/JavaScript
 			if client.supports_method("textDocument/formatting") then
@@ -79,10 +108,15 @@ return {
 				if is_deno_project(fname) then
 					return nil -- Explicitly prevent ts_ls in Deno projects
 				end
-				return lspconfig.util.root_pattern("package.json", "tsconfig.json", "jsconfig.json")(
-				fname)
+				return lspconfig.util.root_pattern("package.json", "tsconfig.json", "jsconfig.json")(fname)
 			end,
 			single_file_support = false, -- Prevent ts_ls from starting on single files
+			commands = {
+				OrganizeImports = {
+					organize_imports,
+					description = "Organize Imports",
+				},
+			},
 			filetypes = {
 				"javascript",
 				"javascriptreact",
@@ -97,6 +131,12 @@ return {
 			on_attach = on_attach,
 			root_dir = lspconfig.util.root_pattern("deno.json", "deno.jsonc"),
 			single_file_support = false,
+			commands = {
+				OrganizeImports = {
+					organize_imports,
+					description = "Organize Imports",
+				},
+			},
 		})
 
 		-- Scala Language Server (Metals)
@@ -153,16 +193,17 @@ return {
 		})
 
 		-- Configure diagnostics with modern sign configuration
+		-- Enhanced diagnostic configuration with custom symbols and colors
 		vim.diagnostic.config({
 			virtual_text = {
 				prefix = "●",
 			},
 			signs = {
 				text = {
-					[vim.diagnostic.severity.ERROR] = " ",
-					[vim.diagnostic.severity.WARN] = " ",
-					[vim.diagnostic.severity.HINT] = " ",
-					[vim.diagnostic.severity.INFO] = " ",
+					[vim.diagnostic.severity.ERROR] = "❌",
+					[vim.diagnostic.severity.WARN] = "⚠️",
+					[vim.diagnostic.severity.HINT] = "💡",
+					[vim.diagnostic.severity.INFO] = "ℹ️",
 				},
 			},
 			underline = true,
@@ -177,6 +218,11 @@ return {
 				prefix = "",
 			},
 		})
+
+		vim.api.nvim_set_hl(0, "DiagnosticVirtualTextError", { fg = "#ff6b6b", bg = "NONE", italic = true })
+		vim.api.nvim_set_hl(0, "DiagnosticVirtualTextWarn", { fg = "#feca57", bg = "NONE", italic = true })
+		vim.api.nvim_set_hl(0, "DiagnosticVirtualTextHint", { fg = "#48dbfb", bg = "NONE", italic = true })
+		vim.api.nvim_set_hl(0, "DiagnosticVirtualTextInfo", { fg = "#54a0ff", bg = "NONE", italic = true })
 
 		-- Configure LSP handlers
 		vim.lsp.handlers["textDocument/hover"] = vim.lsp.with(vim.lsp.handlers.hover, {
