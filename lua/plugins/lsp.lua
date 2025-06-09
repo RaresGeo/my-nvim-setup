@@ -89,7 +89,6 @@ return {
 				"typescript",
 				"typescriptreact",
 			},
-			-- ... rest of your settings
 		})
 
 		-- Deno Language Server
@@ -98,7 +97,6 @@ return {
 			on_attach = on_attach,
 			root_dir = lspconfig.util.root_pattern("deno.json", "deno.jsonc"),
 			single_file_support = false,
-			-- ... rest of your settings
 		})
 
 		-- Scala Language Server (Metals)
