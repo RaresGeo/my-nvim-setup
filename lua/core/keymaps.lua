@@ -3,6 +3,10 @@ vim.keymap.set("n", "<leader>f", function()
 	vim.lsp.buf.format()
 end, { desc = "Format buffer" })
 
+vim.keymap.set("n", ",m", function()
+	vim.cmd(":%s/\r//g")
+end, { desc = "Clear ^M from pasting from Windows" })
+
 -- Harpoon keymaps
 local harpoon = require("harpoon")
 harpoon:setup()
@@ -59,15 +63,15 @@ local function toggle_telescope(harpoon_files)
 	end
 
 	require("telescope.pickers")
-	    .new({}, {
-		    prompt_title = "Harpoon",
-		    finder = require("telescope.finders").new_table({
-			    results = file_paths,
-		    }),
-		    previewer = conf.file_previewer({}),
-		    sorter = conf.generic_sorter({}),
-	    })
-	    :find()
+		.new({}, {
+			prompt_title = "Harpoon",
+			finder = require("telescope.finders").new_table({
+				results = file_paths,
+			}),
+			previewer = conf.file_previewer({}),
+			sorter = conf.generic_sorter({}),
+		})
+		:find()
 end
 
 vim.keymap.set("n", "<C-e>", function()

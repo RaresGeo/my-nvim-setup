@@ -123,7 +123,6 @@ return {
 					buffer = bufnr,
 					callback = organize_imports_ts,
 				})
-				print("Organized imports...")
 			end,
 			root_dir = function(fname)
 				if is_deno_project(fname) then
@@ -162,7 +161,6 @@ return {
 					buffer = bufnr,
 					callback = organize_imports_go,
 				})
-				print("Organized imports...")
 			end,
 			capabilities = capabilities,
 			cmd = { "gopls" },
