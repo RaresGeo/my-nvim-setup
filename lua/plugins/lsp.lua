@@ -1,5 +1,4 @@
-local function organize_imports()
-	-- Check if this is a Deno project
+local function organize_imports_ts()
 	local clients = vim.lsp.get_clients({ bufnr = 0 })
 	local is_node = false
 
@@ -22,6 +21,24 @@ local function organize_imports()
 			end
 		end)
 	end
+end
+
+local function organize_imports_go()
+	vim.api.nvim_create_autocmd("BufWritePre", {
+		pattern = "*.go",
+		callback = function()
+			local params = vim.lsp.util.make_range_params()
+			params.context = { only = { "source.organizeImports" } }
+			local result = vim.lsp.buf_request_sync(0, "textDocument/codeAction", params, 1000)
+			for _, res in pairs(result or {}) do
+				for _, action in pairs(res.result or {}) do
+					if action.edit then
+						vim.lsp.util.apply_workspace_edit(action.edit, "utf-8")
+					end
+				end
+			end
+		end,
+	})
 end
 
 return {
@@ -57,10 +74,7 @@ return {
 			vim.keymap.set("n", "<leader>d", vim.diagnostic.open_float, opts)
 			vim.keymap.set("n", "<leader>q", vim.diagnostic.setloclist, opts)
 
-			-- Formatting
-			vim.keymap.set("n", "<leader>oi", organize_imports, { desc = "Organize imports" })
-
-			-- Format on save for TypeScript/JavaScript
+			-- Format on save
 			if client.supports_method("textDocument/formatting") then
 				vim.api.nvim_create_autocmd("BufWritePre", {
 					buffer = bufnr,
@@ -103,17 +117,25 @@ return {
 		-- TypeScript/JavaScript Language Server
 		lspconfig.ts_ls.setup({
 			capabilities = capabilities,
-			on_attach = on_attach,
+			on_attach = function(client, bufnr)
+				on_attach(client, bufnr)
+				vim.api.nvim_create_autocmd("BufWritePre", {
+					buffer = bufnr,
+					callback = organize_imports_ts,
+				})
+				print("Organized imports...")
+			end,
 			root_dir = function(fname)
 				if is_deno_project(fname) then
 					return nil -- Explicitly prevent ts_ls in Deno projects
 				end
-				return lspconfig.util.root_pattern("package.json", "tsconfig.json", "jsconfig.json")(fname)
+				return lspconfig.util.root_pattern("package.json", "tsconfig.json", "jsconfig.json")(
+				fname)
 			end,
 			single_file_support = false, -- Prevent ts_ls from starting on single files
 			commands = {
 				OrganizeImports = {
-					organize_imports,
+					organize_imports_ts,
 					description = "Organize Imports",
 				},
 			},
@@ -131,10 +153,39 @@ return {
 			on_attach = on_attach,
 			root_dir = lspconfig.util.root_pattern("deno.json", "deno.jsonc"),
 			single_file_support = false,
-			commands = {
-				OrganizeImports = {
-					organize_imports,
-					description = "Organize Imports",
+		})
+
+		lspconfig.gopls.setup({
+			on_attach = function(client, bufnr)
+				on_attach(client, bufnr)
+				vim.api.nvim_create_autocmd("BufWritePre", {
+					buffer = bufnr,
+					callback = organize_imports_go,
+				})
+				print("Organized imports...")
+			end,
+			capabilities = capabilities,
+			cmd = { "gopls" },
+			filetypes = { "go", "gomod", "gowork", "gotmpl" },
+			root_dir = lspconfig.util.root_pattern("go.work", "go.mod", ".git"),
+			settings = {
+				gopls = {
+					completeUnimported = true,
+					usePlaceholders = true,
+					analyses = {
+						unusedparams = true,
+					},
+					["formatting.gofumpt"] = true,
+					["ui.diagnostic.staticcheck"] = true,
+					["ui.inlayhint.hints"] = {
+						assignVariableTypes = true,
+						compositeLiteralFields = true,
+						compositeLiteralTypes = true,
+						constantValues = true,
+						functionTypeParameters = true,
+						parameterNames = true,
+						rangeVariableTypes = true,
+					},
 				},
 			},
 		})
@@ -193,17 +244,16 @@ return {
 		})
 
 		-- Configure diagnostics with modern sign configuration
-		-- Enhanced diagnostic configuration with custom symbols and colors
 		vim.diagnostic.config({
 			virtual_text = {
 				prefix = "●",
 			},
 			signs = {
 				text = {
-					[vim.diagnostic.severity.ERROR] = "❌",
-					[vim.diagnostic.severity.WARN] = "⚠️",
-					[vim.diagnostic.severity.HINT] = "💡",
-					[vim.diagnostic.severity.INFO] = "ℹ️",
+					[vim.diagnostic.severity.ERROR] = "",
+					[vim.diagnostic.severity.WARN] = "",
+					[vim.diagnostic.severity.HINT] = "",
+					[vim.diagnostic.severity.INFO] = "",
 				},
 			},
 			underline = true,
@@ -213,7 +263,7 @@ return {
 				focusable = false,
 				style = "minimal",
 				border = "rounded",
-				source = "always",
+				source = "if_many",
 				header = "",
 				prefix = "",
 			},

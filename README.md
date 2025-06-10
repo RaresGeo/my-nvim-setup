@@ -46,6 +46,7 @@ After each update, it will open a floating window with some commands. You can fo
 - **Scala** (Metals)
 - **Lua** (lua_ls)
 - **Deno** support
+- **Go** support (gopls)
 - Auto-completion with **blink.cmp** and **emmet-ls**
 - Auto-pairs with **nvim-autopairs**
 
@@ -143,7 +144,6 @@ After each update, it will open a floating window with some commands. You can fo
 
 - **nvim-lspconfig** - LSP configurations
 - **nvim-treesitter** - Syntax highlighting
-- **nvim-metals** - Scala language server
 - **blink-cmp** - Auto-completion engine
 - **LuaSnip** - Snippet engine
 
@@ -205,6 +205,12 @@ After each update, it will open a floating window with some commands. You can fo
 ### TypeScript/JavaScript
 
 The `ts_ls` language server will be automatically installed when you first open a TS/JS file.
+You must install deno, which can be done via a package manager. i.e. `npm install -g deno`
+
+### Go
+
+There are multiple ways of installing go, which will automatically come with `gopls`
+See documentation for your preferred way https://go.dev/doc/install
 
 ### Scala (Metals)
 
