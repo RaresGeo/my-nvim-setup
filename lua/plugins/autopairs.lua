@@ -36,80 +36,22 @@ return {
 		-- Add spaces inside brackets for JavaScript/TypeScript
 		autopairs.add_rules({
 			Rule(" ", " ")
-			    :with_pair(function(opts)
-				    local pair = opts.line:sub(opts.col - 1, opts.col)
-				    return vim.tbl_contains({ "()", "[]", "{}" }, pair)
-			    end)
-			    :with_move(function(opts)
-				    return opts.char == " "
-			    end)
-			    :with_cr(function(opts)
-				    return false
-			    end)
-			    :with_del(function(opts)
-				    local col = vim.api.nvim_win_get_cursor(0)[2]
-				    local context = opts.line:sub(col - 1, col + 2)
-				    return vim.tbl_contains({ "(  )", "[  ]", "{  }" }, context)
-			    end),
+				:with_pair(function(opts)
+					local pair = opts.line:sub(opts.col - 1, opts.col)
+					return vim.tbl_contains({ "()", "[]", "{}" }, pair)
+				end)
+				:with_move(function(opts)
+					return opts.char == " "
+				end)
+				:with_cr(function(opts)
+					return false
+				end)
+				:with_del(function(opts)
+					local col = vim.api.nvim_win_get_cursor(0)[2]
+					local context = opts.line:sub(col - 1, col + 2)
+					return vim.tbl_contains({ "(  )", "[  ]", "{  }" }, context)
+				end),
 		})
-
-		-- Add rules for JSX/TSX
-		autopairs.add_rules({
-			-- Auto-close JSX tags
-			Rule("<", ">"):with_pair(ts_conds.is_not_ts_node({ "string", "comment" })):with_move(function(
-			    opts)
-				return opts.char == ">"
-			end),
-		})
-
-		-- HTML-style auto-closing for JSX
-		local function is_jsx_file()
-			local filetype = vim.bo.filetype
-			return filetype == "javascriptreact" or filetype == "typescriptreact"
-		end
-
-		-- Custom function to handle JSX tag completion
-		local function jsx_tag_complete()
-			local line = vim.api.nvim_get_current_line()
-			local col = vim.api.nvim_win_get_cursor(0)[2]
-			local before_cursor = line:sub(1, col)
-
-			-- Simple pattern to detect if we just closed a tag
-			local tag_match = before_cursor:match("<([%w%-]+)[^>]*>$")
-			if tag_match and is_jsx_file() then
-				-- Don't auto-complete self-closing tags
-				local self_closing_tags = {
-					"img",
-					"br",
-					"hr",
-					"input",
-					"meta",
-					"link",
-					"area",
-					"base",
-					"col",
-					"embed",
-					"source",
-					"track",
-					"wbr",
-				}
-
-				if not vim.tbl_contains(self_closing_tags, tag_match:lower()) then
-					return "</" .. tag_match .. ">"
-				end
-			end
-
-			return ""
-		end
-
-		-- Map for JSX tag completion
-		vim.keymap.set("i", ">", function()
-			local completion = jsx_tag_complete()
-			if completion ~= "" then
-				return ">" .. completion .. "<Left><Left><Left>" .. string.rep("<Left>", #completion - 3)
-			else
-				return ">"
-			end
-		end, { expr = true, buffer = true })
+		--
 	end,
 }
