@@ -1,6 +1,6 @@
 -- Editor options
 vim.opt.nu = true
-vim.opt.statuscolumn = "%s %{v:relnum} %{v:lnum}  "
+vim.opt.statuscolumn = "%s %{v:lnum} %{v:relnum}  "
 vim.opt.paste = false
 vim.opt.clipboard = "unnamedplus"
 vim.opt.autoindent = true

@@ -29,7 +29,7 @@ After each update, it will open a floating window with some commands. You can fo
 
 ### 🎨 **Appearance**
 
-- **Catppuccin Mocha** colorscheme
+- **Catppuccin** and **Everforest** colorscheme
 - **Treesitter** syntax highlighting
 
 ### 🔍 **File Navigation**
@@ -132,6 +132,7 @@ After each update, it will open a floating window with some commands. You can fo
 ### UI & Themes
 
 - **catppuccin/nvim** - Colorscheme
+- **Everforest** - Colorscheme
 - **nvim-web-devicons** - File icons
 
 ### File Management
