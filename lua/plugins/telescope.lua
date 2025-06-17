@@ -213,6 +213,7 @@ return {
 		}
 
 		-- Key mappings
+		vim.keymap.set("n", "<leader>tr", "<cmd>Telescope resume<cr>")
 		vim.keymap.set("n", "<C-;>", show_recent_files_picker, { desc = "Show recent files picker" })
 		vim.keymap.set("n", "<leader><Tab>", show_recent_files_picker, { desc = "Show recent files picker" })
 		vim.keymap.set("n", "<leader>`", toggle_recent_terminal_file,

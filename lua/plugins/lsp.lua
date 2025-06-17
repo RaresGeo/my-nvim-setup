@@ -15,7 +15,7 @@ local function organize_imports_ts()
 			arguments = { vim.api.nvim_buf_get_name(0) },
 		}
 
-		vim.lsp.buf_request(0, "workspace/executeCommand", params, function(err, result)
+		vim.lsp.buf_request(0, "workspace/executeCommand", params, function(err, _)
 			if err then
 				vim.notify("Error organizing imports: " .. vim.inspect(err), vim.log.levels.ERROR)
 			end
@@ -57,22 +57,22 @@ return {
 			local opts = { buffer = bufnr, silent = true }
 
 			-- Navigation
-			vim.keymap.set("n", "gd", vim.lsp.buf.definition, opts)
+			vim.keymap.set("n", "gd", "<cmd>Telescope lsp_definitions<cr>", opts)
 			vim.keymap.set("n", "gD", vim.lsp.buf.declaration, opts)
-			vim.keymap.set("n", "gi", vim.lsp.buf.implementation, opts)
-			vim.keymap.set("n", "gr", vim.lsp.buf.references, opts)
+			vim.keymap.set("n", "gi", "<cmd>Telescope lsp_implementations<cr>", opts)
+			vim.keymap.set("n", "gr", "<cmd>Telescope lsp_references<cr>", opts)
 			vim.keymap.set("n", "K", vim.lsp.buf.hover, opts)
 			vim.keymap.set({ "n", "i" }, "<C-k>", vim.lsp.buf.signature_help, opts)
 
 			-- Code actions
-			vim.keymap.set("n", "<leader>ca", vim.lsp.buf.code_action, opts)
+			vim.keymap.set("n", "<leader>ca", "<cmd>Telescope lsp_code_actions<cr>", opts)
 			vim.keymap.set("n", "<leader>rn", vim.lsp.buf.rename, opts)
 
 			-- Diagnostics
 			vim.keymap.set("n", "[d", vim.diagnostic.goto_prev, opts)
 			vim.keymap.set("n", "]d", vim.diagnostic.goto_next, opts)
 			vim.keymap.set("n", "<leader>d", vim.diagnostic.open_float, opts)
-			vim.keymap.set("n", "<leader>q", vim.diagnostic.setloclist, opts)
+			vim.keymap.set("n", "<leader>q", "<cmd>Telescope diagnostics bufnr=0<cr>", opts) -- current buffer diagnostics
 
 			-- Format on save
 			if client.supports_method("textDocument/formatting") then
