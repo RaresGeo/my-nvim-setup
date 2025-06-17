@@ -5,6 +5,7 @@ return {
 		enabled = true,
 		message_template = "<author> • <summary> • <date>",
 		date_format = "%m-%d-%Y %H:%M:%S",
-		virtual_text_column = 1,
+		highlight_group = "Question",
+		virtual_text_column = 80,
 	},
 }
