@@ -1,3 +1,42 @@
+vim.api.nvim_create_user_command("List", function(opts)
+	local arg = opts.args:lower()
+	local symbols_filter = nil
+
+	if arg == "functions" then
+		symbols_filter = { "function" }
+	elseif arg == "methods" then
+		symbols_filter = { "method" }
+	elseif arg == "classes" then
+		symbols_filter = { "class", "interface" }
+	elseif arg == "variables" then
+		symbols_filter = { "variable", "constant" }
+	elseif arg == "types" then
+		symbols_filter = { "class", "interface", "enum", "struct" }
+	elseif arg ~= "all" then
+		-- Handle comma-separated combinations like 'functions,methods'
+		local parts = vim.split(arg, ",")
+		symbols_filter = {}
+		for _, part in ipairs(parts) do
+			part = vim.trim(part)
+			if part == "functions" then
+				table.insert(symbols_filter, "function")
+			elseif part == "methods" then
+				table.insert(symbols_filter, "method")
+				-- Add other mappings as needed
+			end
+		end
+	end
+
+	require("telescope.builtin").lsp_document_symbols({
+		symbols = symbols_filter,
+	})
+end, {
+	nargs = 1,
+	complete = function()
+		return { "all", "functions", "methods", "classes", "variables", "types" }
+	end,
+})
+
 return {
 	"nvim-telescope/telescope.nvim",
 	dependencies = { "nvim-lua/plenary.nvim" },
@@ -99,8 +138,7 @@ return {
 				local modified_indicator = has_unsaved_changes and "* " or " "
 
 				table.insert(entries, {
-					display = string.format("%s%d: %s (%s)", modified_indicator, i, filename,
-						relative_path),
+					display = string.format("%s%d: %s (%s)", modified_indicator, i, filename, relative_path),
 					ordinal = filename .. " " .. relative_path,
 					value = filepath,
 					index = i,
@@ -108,37 +146,37 @@ return {
 			end
 
 			pickers
-			    .new({}, {
-				    prompt_title = "Recent Files",
-				    finder = finders.new_table({
-					    results = entries,
-					    entry_maker = function(entry)
-						    return {
-							    display = entry.display,
-							    ordinal = entry.ordinal,
-							    value = entry.value,
-							    index = entry.index,
-							    path = entry.value, -- Required for preview
-						    }
-					    end,
-				    }),
-				    sorter = conf.generic_sorter({}),
-				    previewer = conf.file_previewer({}), -- Add file preview
-				    default_selection_index = 2, -- Start with second entry selected
-				    attach_mappings = function(prompt_bufnr, map)
-					    actions.select_default:replace(function()
-						    local selection = action_state.get_selected_entry()
-						    actions.close(prompt_bufnr)
-						    if selection then
-							    vim.cmd("edit " .. selection.value)
-							    -- Move selected file to front of recent list
-							    add_recent_file(selection.value)
-						    end
-					    end)
-					    return true
-				    end,
-			    })
-			    :find()
+				.new({}, {
+					prompt_title = "Recent Files",
+					finder = finders.new_table({
+						results = entries,
+						entry_maker = function(entry)
+							return {
+								display = entry.display,
+								ordinal = entry.ordinal,
+								value = entry.value,
+								index = entry.index,
+								path = entry.value, -- Required for preview
+							}
+						end,
+					}),
+					sorter = conf.generic_sorter({}),
+					previewer = conf.file_previewer({}), -- Add file preview
+					default_selection_index = 2, -- Start with second entry selected
+					attach_mappings = function(prompt_bufnr, map)
+						actions.select_default:replace(function()
+							local selection = action_state.get_selected_entry()
+							actions.close(prompt_bufnr)
+							if selection then
+								vim.cmd("edit " .. selection.value)
+								-- Move selected file to front of recent list
+								add_recent_file(selection.value)
+							end
+						end)
+						return true
+					end,
+				})
+				:find()
 		end
 
 		-- Auto command to track file opens
@@ -216,8 +254,7 @@ return {
 		vim.keymap.set("n", "<leader>tr", "<cmd>Telescope resume<cr>")
 		vim.keymap.set("n", "<C-;>", show_recent_files_picker, { desc = "Show recent files picker" })
 		vim.keymap.set("n", "<leader><Tab>", show_recent_files_picker, { desc = "Show recent files picker" })
-		vim.keymap.set("n", "<leader>`", toggle_recent_terminal_file,
-			{ desc = "Toggle between recent terminal and file" })
+		vim.keymap.set("n", "<leader>`", toggle_recent_terminal_file, { desc = "Toggle between recent terminal and file" })
 		vim.keymap.set("t", "<leader>`", function()
 			-- Exit terminal mode first, then call the function
 			vim.cmd("stopinsert")
