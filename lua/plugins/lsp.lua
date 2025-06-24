@@ -58,6 +58,7 @@ return {
 
 			-- Navigation
 			vim.keymap.set("n", "gd", "<cmd>Telescope lsp_definitions<cr>", opts)
+			vim.keymap.set("n", "td", "<cmd>Telescope lsp_type_definitions<cr>", opts)
 			vim.keymap.set("n", "gD", vim.lsp.buf.declaration, opts)
 			vim.keymap.set("n", "gi", "<cmd>Telescope lsp_implementations<cr>", opts)
 			vim.keymap.set("n", "gr", "<cmd>Telescope lsp_references<cr>", opts)
