@@ -129,8 +129,7 @@ return {
 				if is_deno_project(fname) then
 					return nil -- Explicitly prevent ts_ls in Deno projects
 				end
-				return lspconfig.util.root_pattern("package.json", "tsconfig.json", "jsconfig.json")(
-				fname)
+				return lspconfig.util.root_pattern("package.json", "tsconfig.json", "jsconfig.json")(fname)
 			end,
 			single_file_support = false, -- Prevent ts_ls from starting on single files
 			commands = {
@@ -240,6 +239,11 @@ return {
 					},
 				},
 			},
+		})
+
+		lspconfig.pylsp.setup({
+			capabilities = capabilities,
+			on_attach = on_attach,
 		})
 
 		-- Configure diagnostics with modern sign configuration
