@@ -44,15 +44,12 @@ end
 return {
 	"neovim/nvim-lspconfig",
 	dependencies = {
-		"saghen/blink.cmp", -- Changed from cmp-nvim-lsp to blink.cmp
+		"saghen/blink.cmp",
 	},
 	config = function()
+		local capabilities = require("blink.cmp").get_lsp_capabilities()
 		local lspconfig = require("lspconfig")
 
-		-- Enhanced capabilities for auto-completion using blink.cmp
-		local capabilities = require("blink.cmp").get_lsp_capabilities()
-
-		-- Key mappings for LSP features
 		local on_attach = function(client, bufnr)
 			local opts = { buffer = bufnr, silent = true }
 
@@ -70,8 +67,6 @@ return {
 			vim.keymap.set("n", "<leader>rn", vim.lsp.buf.rename, opts)
 
 			-- Diagnostics
-			vim.keymap.set("n", "[d", vim.diagnostic.goto_prev, opts)
-			vim.keymap.set("n", "]d", vim.diagnostic.goto_next, opts)
 			vim.keymap.set("n", "<leader>d", vim.diagnostic.open_float, opts)
 			vim.keymap.set("n", "<leader>q", "<cmd>Telescope diagnostics bufnr=0<cr>", opts) -- current buffer diagnostics
 
@@ -85,13 +80,14 @@ return {
 				})
 			end
 		end
-		-- Helper function to check if we're in a Deno project
+
 		local function is_deno_project(fname)
 			return lspconfig.util.root_pattern("deno.json", "deno.jsonc")(fname) ~= nil
 		end
 
-		-- Emmet Language Server
-		lspconfig.emmet_ls.setup({
+		vim.lsp.enable("emmet_ls")
+
+		vim.lsp.config("emmet_ls", {
 			capabilities = capabilities,
 			on_attach = on_attach,
 			filetypes = {
@@ -108,15 +104,15 @@ return {
 			init_options = {
 				html = {
 					options = {
-						-- For possible options, see: https://github.com/emmetio/emmet/blob/master/src/config.ts#L79-L267
 						["bem.enabled"] = true,
 					},
 				},
 			},
 		})
 
-		-- TypeScript/JavaScript Language Server
-		lspconfig.ts_ls.setup({
+		vim.lsp.enable("ts_ls")
+
+		vim.lsp.config("ts_ls", {
 			capabilities = capabilities,
 			on_attach = function(client, bufnr)
 				on_attach(client, bufnr)
@@ -129,7 +125,8 @@ return {
 				if is_deno_project(fname) then
 					return nil -- Explicitly prevent ts_ls in Deno projects
 				end
-				return lspconfig.util.root_pattern("package.json", "tsconfig.json", "jsconfig.json")(fname)
+				return vim.lsp.config.util.root_pattern("package.json", "tsconfig.json", "jsconfig.json")(
+				fname)
 			end,
 			single_file_support = false, -- Prevent ts_ls from starting on single files
 			commands = {
@@ -146,15 +143,18 @@ return {
 			},
 		})
 
-		-- Deno Language Server
-		lspconfig.denols.setup({
+		vim.lsp.enable("denols")
+
+		vim.lsp.config("denols", {
 			capabilities = capabilities,
 			on_attach = on_attach,
-			root_dir = lspconfig.util.root_pattern("deno.json", "deno.jsonc"),
+			root_markers = { "deno.json", "deno.jsonc", ".git" },
 			single_file_support = false,
 		})
 
-		lspconfig.gopls.setup({
+		vim.lsp.enable("gopls")
+
+		vim.lsp.config("gopls", {
 			on_attach = function(client, bufnr)
 				on_attach(client, bufnr)
 				vim.api.nvim_create_autocmd("BufWritePre", {
@@ -165,7 +165,7 @@ return {
 			capabilities = capabilities,
 			cmd = { "gopls" },
 			filetypes = { "go", "gomod", "gowork", "gotmpl" },
-			root_dir = lspconfig.util.root_pattern("go.work", "go.mod", ".git"),
+			root_markers = { "go.work", "go.mod", ".git" },
 			settings = {
 				gopls = {
 					completeUnimported = true,
@@ -188,13 +188,13 @@ return {
 			},
 		})
 
-		-- Scala Language Server (Metals)
-		lspconfig.metals.setup({
+		vim.lsp.enable("metals")
+
+		vim.lsp.config("metals", {
 			capabilities = capabilities,
 			on_attach = function(client, bufnr)
 				on_attach(client, bufnr)
 
-				-- Metals specific commands
 				vim.keymap.set("n", "<leader>mc", function()
 					require("telescope").extensions.metals.commands()
 				end, { buffer = bufnr, desc = "Metals commands" })
@@ -210,16 +210,17 @@ return {
 					showImplicitConversionsAndClasses = true,
 					showInferredType = true,
 					superMethodLensesEnabled = true,
-					enableSemanticHighlighting = false, -- Use treesitter instead
+					enableSemanticHighlighting = false,
 				},
 			},
 			init_options = {
-				statusBarProvider = "off", -- Let nvim handle status
+				statusBarProvider = "off",
 			},
 		})
 
-		-- Lua Language Server (for your Neovim config)
-		lspconfig.lua_ls.setup({
+		vim.lsp.enable("lua_ls")
+
+		vim.lsp.config("lua_ls", {
 			capabilities = capabilities,
 			on_attach = on_attach,
 			settings = {
@@ -228,7 +229,7 @@ return {
 						version = "LuaJIT",
 					},
 					diagnostics = {
-						globals = { "vim" }, -- Recognize 'vim' global
+						globals = { "vim" },
 					},
 					workspace = {
 						library = vim.api.nvim_get_runtime_file("", true),
@@ -241,12 +242,13 @@ return {
 			},
 		})
 
-		lspconfig.pylsp.setup({
+		vim.lsp.enable("pylsp")
+
+		vim.lsp.config("pylsp", {
 			capabilities = capabilities,
 			on_attach = on_attach,
 		})
 
-		-- Configure diagnostics with modern sign configuration
 		vim.diagnostic.config({
 			virtual_text = {
 				prefix = "●",
@@ -277,7 +279,6 @@ return {
 		vim.api.nvim_set_hl(0, "DiagnosticVirtualTextHint", { fg = "#48dbfb", bg = "NONE", italic = true })
 		vim.api.nvim_set_hl(0, "DiagnosticVirtualTextInfo", { fg = "#54a0ff", bg = "NONE", italic = true })
 
-		-- Configure LSP handlers
 		vim.lsp.handlers["textDocument/hover"] = vim.lsp.with(vim.lsp.handlers.hover, {
 			border = "rounded",
 		})
