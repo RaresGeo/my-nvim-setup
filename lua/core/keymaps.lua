@@ -77,3 +77,41 @@ end
 vim.keymap.set("n", "<C-e>", function()
 	toggle_telescope(harpoon:list())
 end, { desc = "Open harpoon window" })
+
+vim.api.nvim_create_user_command("CpAbsPath", function(opts)
+	local file = vim.fn.expand("%")
+	if file == "" then
+		vim.notify("No file name detected (unsaved buffer?)", vim.log.levels.ERROR)
+		return
+	end
+
+	local abs_path = vim.fn.expand("%:p") -- Full absolute path
+	vim.fn.setreg("+", abs_path) -- Copy to system clipboard
+
+	-- Only show notification if not called with ! (e.g., :CpAbsPath!)
+	if not opts.bang then
+		vim.notify("Copied ABSOLUTE path to clipboard:\n" .. abs_path, vim.log.levels.INFO)
+	end
+end, {
+	bang = true, -- Allows :CpAbsPath! (silent mode)
+	desc = "Copy absolute file path to clipboard",
+})
+
+vim.api.nvim_create_user_command("CpRelPath", function(opts)
+	local file = vim.fn.expand("%")
+	if file == "" then
+		vim.notify("No file name detected (unsaved buffer?)", vim.log.levels.ERROR)
+		return
+	end
+
+	local rel_path = vim.fn.expand("%:.") -- Path relative to working directory
+	vim.fn.setreg("+", rel_path) -- Copy to system clipboard
+
+	-- Only show notification if not called with ! (e.g., :CpRelPath!)
+	if not opts.bang then
+		vim.notify("Copied RELATIVE path to clipboard:\n" .. rel_path, vim.log.levels.INFO)
+	end
+end, {
+	bang = true, -- Allows :CpRelPath! (silent mode)
+	desc = "Copy relative file path to clipboard",
+})
