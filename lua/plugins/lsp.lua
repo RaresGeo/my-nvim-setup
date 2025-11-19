@@ -48,8 +48,8 @@ return {
 	},
 	config = function()
 		local capabilities = require("blink.cmp").get_lsp_capabilities()
-		local lspconfig = require("lspconfig")
 
+		---@diagnostic disable-next-line: unused-local
 		local on_attach = function(client, bufnr)
 			local opts = { buffer = bufnr, silent = true }
 
@@ -81,38 +81,10 @@ return {
 			end
 		end
 
-		local function is_deno_project(fname)
-			return lspconfig.util.root_pattern("deno.json", "deno.jsonc")(fname) ~= nil
-		end
-
-		vim.lsp.enable("emmet_ls")
-
-		vim.lsp.config("emmet_ls", {
-			capabilities = capabilities,
-			on_attach = on_attach,
-			filetypes = {
-				"html",
-				"css",
-				"scss",
-				"javascript",
-				"javascriptreact",
-				"typescript",
-				"typescriptreact",
-				"vue",
-				"svelte",
-			},
-			init_options = {
-				html = {
-					options = {
-						["bem.enabled"] = true,
-					},
-				},
-			},
-		})
-
 		vim.lsp.enable("ts_ls")
 
 		vim.lsp.config("ts_ls", {
+			cmd = { "typescript-language-server", "--stdio" },
 			capabilities = capabilities,
 			on_attach = function(client, bufnr)
 				on_attach(client, bufnr)
@@ -121,14 +93,20 @@ return {
 					callback = organize_imports_ts,
 				})
 			end,
-			root_dir = function(fname)
-				if is_deno_project(fname) then
-					return nil -- Explicitly prevent ts_ls in Deno projects
+			---@diagnostic disable-next-line: unused-local
+			root_dir = function(bufnr, on_dir)
+				local root_path = vim.fs.find("package.json", {
+					upward = true,
+					type = "file",
+					path = vim.fn.getcwd(),
+				})[1]
+
+				if root_path then
+					on_dir(vim.fn.fnamemodify(root_path, ":h"))
 				end
-				return vim.lsp.config.util.root_pattern("package.json", "tsconfig.json", "jsconfig.json")(
-				fname)
 			end,
-			single_file_support = false, -- Prevent ts_ls from starting on single files
+			workspace_required = true,
+			single_file_support = false,
 			commands = {
 				OrganizeImports = {
 					organize_imports_ts,
@@ -146,10 +124,46 @@ return {
 		vim.lsp.enable("denols")
 
 		vim.lsp.config("denols", {
+			cmd = { "deno", "lsp" },
+			cmd_env = { NO_COLOR = true },
 			capabilities = capabilities,
 			on_attach = on_attach,
-			root_markers = { "deno.json", "deno.jsonc", ".git" },
-			single_file_support = false,
+			---@diagnostic disable-next-line: unused-local
+			root_dir = function(bufnr, on_dir)
+				local root_path = vim.fs.find("deno.json", {
+					upward = true,
+					type = "file",
+					path = vim.fn.getcwd(),
+				})[1]
+
+				if root_path then
+					on_dir(vim.fn.fnamemodify(root_path, ":h"))
+				end
+			end,
+			workspace_required = true,
+		})
+
+		vim.lsp.enable("emmet_ls")
+
+		vim.lsp.config("emmet_ls", {
+			capabilities = capabilities,
+			on_attach = on_attach,
+			filetypes = {
+				"html",
+				"css",
+				"scss",
+				"javascriptreact",
+				"typescriptreact",
+				"vue",
+				"svelte",
+			},
+			init_options = {
+				html = {
+					options = {
+						["bem.enabled"] = true,
+					},
+				},
+			},
 		})
 
 		vim.lsp.enable("gopls")

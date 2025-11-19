@@ -148,11 +148,6 @@ After each update, it will open a floating window with some commands. You can fo
 - **blink-cmp** - Auto-completion engine
 - **LuaSnip** - Snippet engine
 
-### Code Quality
-
-- **none-ls.nvim** (null-ls successor) - Formatting and linting
-- **Comment.nvim** - Smart commenting
-- **nvim-ts-context-commentstring** - Context-aware commenting
 
 ## File Structure
 
@@ -173,7 +168,6 @@ After each update, it will open a floating window with some commands. You can fo
 │       ├── harpoon.lua
 │       ├── lsp.lua
 │       ├── metals.lua
-│       ├── null-ls.lua
 │       ├── oil.lua
 │       ├── telescope.lua
 │       ├── treesitter.lua

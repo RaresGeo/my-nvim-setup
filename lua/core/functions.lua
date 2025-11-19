@@ -10,6 +10,7 @@ _G.open_terminal_in_current_dir = function()
 	end
 	vim.cmd("terminal")
 	-- Change to the directory in the terminal
+	vim.fn.chansend(vim.b.terminal_job_id, "export NVIM_TERMINAL=1\r")
 	vim.fn.chansend(vim.b.terminal_job_id, "cd " .. vim.fn.shellescape(dir) .. "\r")
 	-- Change back to the base directory.
 	-- I found that opening a terminal in the actual current directory is rarely desired
