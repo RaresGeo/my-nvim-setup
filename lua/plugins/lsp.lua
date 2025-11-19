@@ -71,14 +71,14 @@ return {
 			vim.keymap.set("n", "<leader>q", "<cmd>Telescope diagnostics bufnr=0<cr>", opts) -- current buffer diagnostics
 
 			-- Format on save
-			if client.supports_method("textDocument/formatting") then
-				vim.api.nvim_create_autocmd("BufWritePre", {
-					buffer = bufnr,
-					callback = function()
-						vim.lsp.buf.format({ async = false })
-					end,
-				})
-			end
+			-- if client.supports_method("textDocument/formatting") then
+			-- 	vim.api.nvim_create_autocmd("BufWritePre", {
+			-- 		buffer = bufnr,
+			-- 		callback = function()
+			-- 			vim.lsp.buf.format({ async = false })
+			-- 		end,
+			-- 	})
+			-- end
 		end
 
 		vim.lsp.enable("ts_ls")
@@ -86,13 +86,7 @@ return {
 		vim.lsp.config("ts_ls", {
 			cmd = { "typescript-language-server", "--stdio" },
 			capabilities = capabilities,
-			on_attach = function(client, bufnr)
-				on_attach(client, bufnr)
-				vim.api.nvim_create_autocmd("BufWritePre", {
-					buffer = bufnr,
-					callback = organize_imports_ts,
-				})
-			end,
+			on_attach = on_attach,
 			---@diagnostic disable-next-line: unused-local
 			root_dir = function(bufnr, on_dir)
 				local root_path = vim.fs.find("package.json", {
@@ -146,7 +140,10 @@ return {
 		vim.lsp.enable("emmet_ls")
 
 		vim.lsp.config("emmet_ls", {
-			capabilities = capabilities,
+			capabilities = vim.tbl_extend("force", capabilities, {
+				documentFormattingProvider = false,
+				documentRangeFormattingProvider = false,
+			}),
 			on_attach = on_attach,
 			filetypes = {
 				"html",
