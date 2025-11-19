@@ -1,3 +1,13 @@
+-- Disable arrow keys to force hjkl
+vim.keymap.set('n', '<Left>', [[:echoe "Use h"<CR>]])
+vim.keymap.set('n', '<Right>', [[:echoe "Use l"<CR>]])
+vim.keymap.set('n', '<Up>', [[:echoe "Use k"<CR>]])
+vim.keymap.set('n', '<Down>', [[:echoe "Use j"<CR>]])
+
+vim.keymap.set('i', '<Left>', [[<ESC>:echoe "Use h"<CR>]])
+vim.keymap.set('i', '<Right>', [[<ESC>:echoe "Use l"<CR>]])
+vim.keymap.set('i', '<Up>', [[<ESC>:echoe "Use k"<CR>]])
+vim.keymap.set('i', '<Down>', [[<ESC>:echoe "Use j"<CR>]])
 -- General keymaps
 vim.keymap.set("n", "<leader>f", function()
 	vim.lsp.buf.format()
@@ -6,6 +16,11 @@ end, { desc = "Format buffer" })
 vim.keymap.set("n", ",m", function()
 	vim.cmd(":%s/\r//g")
 end, { desc = "Clear ^M from pasting from Windows" })
+vim.keymap.set("n", "<C-S-L>", function()
+	vim.cmd("nohlsearch") -- Clear search highlighting
+	vim.cmd("diffupdate") -- Refresh diff highlighting
+	vim.cmd("redraw") -- Force redraw the screen
+end, { desc = "Clear search highlighting and refresh screen" })
 
 -- Harpoon keymaps
 local harpoon = require("harpoon")
@@ -63,15 +78,15 @@ local function toggle_telescope(harpoon_files)
 	end
 
 	require("telescope.pickers")
-		.new({}, {
-			prompt_title = "Harpoon",
-			finder = require("telescope.finders").new_table({
-				results = file_paths,
-			}),
-			previewer = conf.file_previewer({}),
-			sorter = conf.generic_sorter({}),
-		})
-		:find()
+	    .new({}, {
+		    prompt_title = "Harpoon",
+		    finder = require("telescope.finders").new_table({
+			    results = file_paths,
+		    }),
+		    previewer = conf.file_previewer({}),
+		    sorter = conf.generic_sorter({}),
+	    })
+	    :find()
 end
 
 vim.keymap.set("n", "<C-e>", function()
@@ -86,7 +101,7 @@ vim.api.nvim_create_user_command("CpAbsPath", function(opts)
 	end
 
 	local abs_path = vim.fn.expand("%:p") -- Full absolute path
-	vim.fn.setreg("+", abs_path) -- Copy to system clipboard
+	vim.fn.setreg("+", abs_path)   -- Copy to system clipboard
 
 	-- Only show notification if not called with ! (e.g., :CpAbsPath!)
 	if not opts.bang then
@@ -105,7 +120,7 @@ vim.api.nvim_create_user_command("CpRelPath", function(opts)
 	end
 
 	local rel_path = vim.fn.expand("%:.") -- Path relative to working directory
-	vim.fn.setreg("+", rel_path) -- Copy to system clipboard
+	vim.fn.setreg("+", rel_path)   -- Copy to system clipboard
 
 	-- Only show notification if not called with ! (e.g., :CpRelPath!)
 	if not opts.bang then

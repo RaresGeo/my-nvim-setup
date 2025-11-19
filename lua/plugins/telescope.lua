@@ -138,7 +138,8 @@ return {
 				local modified_indicator = has_unsaved_changes and "* " or " "
 
 				table.insert(entries, {
-					display = string.format("%s%d: %s (%s)", modified_indicator, i, filename, relative_path),
+					display = string.format("%s%d: %s (%s)", modified_indicator, i, filename,
+						relative_path),
 					ordinal = filename .. " " .. relative_path,
 					value = filepath,
 					index = i,
@@ -146,37 +147,37 @@ return {
 			end
 
 			pickers
-				.new({}, {
-					prompt_title = "Recent Files",
-					finder = finders.new_table({
-						results = entries,
-						entry_maker = function(entry)
-							return {
-								display = entry.display,
-								ordinal = entry.ordinal,
-								value = entry.value,
-								index = entry.index,
-								path = entry.value, -- Required for preview
-							}
-						end,
-					}),
-					sorter = conf.generic_sorter({}),
-					previewer = conf.file_previewer({}), -- Add file preview
-					default_selection_index = 2, -- Start with second entry selected
-					attach_mappings = function(prompt_bufnr, map)
-						actions.select_default:replace(function()
-							local selection = action_state.get_selected_entry()
-							actions.close(prompt_bufnr)
-							if selection then
-								vim.cmd("edit " .. selection.value)
-								-- Move selected file to front of recent list
-								add_recent_file(selection.value)
-							end
-						end)
-						return true
-					end,
-				})
-				:find()
+			    .new({}, {
+				    prompt_title = "Recent Files",
+				    finder = finders.new_table({
+					    results = entries,
+					    entry_maker = function(entry)
+						    return {
+							    display = entry.display,
+							    ordinal = entry.ordinal,
+							    value = entry.value,
+							    index = entry.index,
+							    path = entry.value, -- Required for preview
+						    }
+					    end,
+				    }),
+				    sorter = conf.generic_sorter({}),
+				    previewer = conf.file_previewer({}), -- Add file preview
+				    default_selection_index = 2, -- Start with second entry selected
+				    attach_mappings = function(prompt_bufnr, map)
+					    actions.select_default:replace(function()
+						    local selection = action_state.get_selected_entry()
+						    actions.close(prompt_bufnr)
+						    if selection then
+							    vim.cmd("edit " .. selection.value)
+							    -- Move selected file to front of recent list
+							    add_recent_file(selection.value)
+						    end
+					    end)
+					    return true
+				    end,
+			    })
+			    :find()
 		end
 
 		-- Auto command to track file opens
@@ -199,49 +200,60 @@ return {
 			end,
 		})
 
-		local function toggle_recent_terminal_file()
-			print("Toggling recent terminal")
-			local current_buftype = vim.bo.buftype
+		local terminal_buf = nil -- Track the terminal buffer
+		local terminal_win = nil -- Track the terminal window
 
-			if current_buftype == "terminal" then
-				-- We're in a terminal, find most recent non-terminal file from recent_files
-				for _, filepath in ipairs(recent_files) do
-					vim.cmd("edit " .. filepath)
-					return
-				end
-				print("No recent files found")
-				vim.cmd("Oil")
-			else
-				-- We're in a regular file, find most recent terminal from all buffers
-				local terminal_bufs = {}
-				for _, bufnr in ipairs(vim.api.nvim_list_bufs()) do
-					if vim.api.nvim_buf_is_loaded(bufnr) and vim.bo[bufnr].buftype == "terminal" then
-						table.insert(terminal_bufs, {
-							bufnr = bufnr,
-							lastused = vim.fn.getbufinfo(bufnr)[1].lastused,
-						})
-					end
-				end
+		local function toggle_terminal_split()
+			print("Toggling terminal split")
 
-				if #terminal_bufs > 0 then
-					-- Sort by most recently used
-					table.sort(terminal_bufs, function(a, b)
-						return a.lastused > b.lastused
-					end)
-					vim.cmd("buffer " .. terminal_bufs[1].bufnr)
-					vim.cmd("startinsert")
-					return
-				end
-
-				print("No recent terminals found, opening a new one")
-				open_terminal_in_current_dir()
+			-- Check if terminal window exists and is visible
+			if terminal_win and vim.api.nvim_win_is_valid(terminal_win) then
+				-- Hide the terminal split
+				vim.api.nvim_win_close(terminal_win, false)
+				terminal_win = nil
+				return
 			end
+
+			-- Terminal window doesn't exist or is closed, but buffer might exist
+			local current_file = vim.fn.expand("%:p")
+			local dir
+			if current_file ~= "" and vim.fn.filereadable(current_file) == 1 then
+				dir = vim.fn.fnamemodify(current_file, ":h")
+			else
+				dir = vim.fn.getcwd()
+			end
+
+			-- Create horizontal split at the bottom
+			vim.cmd("botright split")
+			vim.cmd("resize 15")
+
+			-- Check if we have an existing terminal buffer
+			if terminal_buf and vim.api.nvim_buf_is_loaded(terminal_buf) then
+				-- Reuse existing terminal buffer
+				vim.cmd("buffer " .. terminal_buf)
+			else
+				-- Create new terminal
+				vim.cmd("terminal")
+				terminal_buf = vim.api.nvim_get_current_buf()
+
+				-- Only setup the terminal if it's new
+				vim.fn.chansend(vim.b.terminal_job_id, "export NVIM_TERMINAL=1\r")
+				vim.fn.chansend(vim.b.terminal_job_id, "cd " .. vim.fn.shellescape(dir) .. "\r")
+				vim.fn.chansend(vim.b.terminal_job_id, "cd - \r")
+				vim.fn.chansend(vim.b.terminal_job_id, "clear \r")
+			end
+
+			-- Store the window ID
+			terminal_win = vim.api.nvim_get_current_win()
+
+			vim.cmd("startinsert")
 		end
+
 		-- Make functions available globally
 		_G.RecentFiles = {
 			show_picker = show_recent_files_picker,
 			add_file = add_recent_file,
-			toggle_terminal_file = toggle_recent_terminal_file,
+			toggle_terminal_split = toggle_terminal_split,
 			get_recent = function()
 				return recent_files
 			end,
@@ -254,11 +266,12 @@ return {
 		vim.keymap.set("n", "<leader>tr", "<cmd>Telescope resume<cr>")
 		vim.keymap.set("n", "<C-;>", show_recent_files_picker, { desc = "Show recent files picker" })
 		vim.keymap.set("n", "<leader><Tab>", show_recent_files_picker, { desc = "Show recent files picker" })
-		vim.keymap.set("n", "<leader>`", toggle_recent_terminal_file, { desc = "Toggle between recent terminal and file" })
+		vim.keymap.set("n", "<leader>`", toggle_terminal_split,
+			{ desc = "Toggle between recent terminal and file" })
 		vim.keymap.set("t", "<leader>`", function()
 			-- Exit terminal mode first, then call the function
 			vim.cmd("stopinsert")
-			toggle_recent_terminal_file()
+			toggle_terminal_split()
 		end, { desc = "Toggle between recent terminal and file" })
 	end,
 }

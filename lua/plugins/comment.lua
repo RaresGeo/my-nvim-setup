@@ -32,7 +32,8 @@ return {
 
 			-- For visual mode, use the Comment.nvim's proper visual mode function
 			vim.keymap.set("x", "<C-_>", function()
-				vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<ESC>", true, false, true), "nx", false)
+				vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<ESC>", true, false, true), "nx",
+					false)
 				api.toggle.linewise(vim.fn.visualmode())
 			end, {
 				noremap = true,
