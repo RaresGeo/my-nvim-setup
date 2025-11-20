@@ -225,7 +225,7 @@ return {
 
 			-- Create horizontal split at the bottom
 			vim.cmd("botright split")
-			vim.cmd("resize 15")
+			vim.cmd("resize 20")
 
 			-- Check if we have an existing terminal buffer
 			if terminal_buf and vim.api.nvim_buf_is_loaded(terminal_buf) then

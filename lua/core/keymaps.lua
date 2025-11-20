@@ -16,7 +16,7 @@ end, { desc = "Format buffer" })
 vim.keymap.set("n", ",m", function()
 	vim.cmd(":%s/\r//g")
 end, { desc = "Clear ^M from pasting from Windows" })
-vim.keymap.set("n", "<C-S-L>", function()
+vim.keymap.set("n", "<leader>l", function()
 	vim.cmd("nohlsearch") -- Clear search highlighting
 	vim.cmd("diffupdate") -- Refresh diff highlighting
 	vim.cmd("redraw") -- Force redraw the screen
