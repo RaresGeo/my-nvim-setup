@@ -260,6 +260,26 @@ return {
 			on_attach = on_attach,
 		})
 
+		vim.lsp.enable("solidity_ls")
+
+		vim.lsp.config("solidity_ls", {
+			capabilities = capabilities,
+			on_attach = on_attach,
+			cmd = { 'vscode-solidity-server', '--stdio' },
+			filetypes = { 'solidity' },
+			root_markers = {
+				'hardhat.config.js',
+				'hardhat.config.ts',
+				'foundry.toml',
+				'remappings.txt',
+				'truffle.js',
+				'truffle-config.js',
+				'ape-config.yaml',
+				'.git',
+				'package.json',
+			},
+		})
+
 		vim.diagnostic.config({
 			virtual_text = {
 				prefix = "●",
