@@ -74,6 +74,7 @@ ZSH_THEME="agnoster"
 plugins=(git zsh-autosuggestions zsh-syntax-highlighting)
 
 source $ZSH/oh-my-zsh.sh
+unsetopt share_history
 
 # User configuration
 
@@ -103,22 +104,26 @@ source $ZSH/oh-my-zsh.sh
 # Example aliases
 # alias zshconfig="mate ~/.zshrc"
 # alias ohmyzsh="mate ~/.oh-my-zsh"
-. "/home/daniel/.deno/env"
+# Source Deno env if it exists
+[[ -f "$HOME/.deno/env" ]] && . "$HOME/.deno/env"
 
 [[ -o login ]] && cd work 2>/dev/null
 
 export VOLTA_HOME="$HOME/.volta"
-export PATH="$VOLTA_HOME/bin:$PATH"
-export PATH="$PATH:/usr/local/go/bin"
-export PATH="$PATH:$(go env GOPATH)/bin"
-export PATH="$PATH:/home/daniel/.foundry/bin"
-export PATH="$PATH:$HOME/.cargo/bin"
-export PATH="/home/linuxbrew/.linuxbrew/opt/openjdk@21/bin:$PATH"
+[[ -d "$VOLTA_HOME/bin" ]] && export PATH="$VOLTA_HOME/bin:$PATH"
 
-eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
-eval "$(mise activate zsh)"
-eval "$(direnv hook zsh)"
+# Some things might be handled or installed by something else, like mise, so do this conditionally.
+[[ -d "/usr/local/go/bin" ]] && export PATH="$PATH:/usr/local/go/bin"
+GOPATH=$(go env GOPATH 2>/dev/null)
+[[ -d "$GOPATH/bin" ]] && export PATH="$PATH:$GOPATH/bin"
+[[ -d "$HOME/.foundry/bin" ]] && export PATH="$PATH:$HOME/.foundry/bin"
+[[ -d "$HOME/.cargo/bin" ]] && export PATH="$PATH:$HOME/.cargo/bin"
+[[ -d "/home/linuxbrew/.linuxbrew/opt/openjdk@21/bin" ]] && export PATH="/home/linuxbrew/.linuxbrew/opt/openjdk@21/bin:$PATH"
 
+# Some things like Arch might not have homebrew
+[[ -f "/home/linuxbrew/.linuxbrew/bin/brew" ]] && eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
+command -v mise &>/dev/null && eval "$(mise activate zsh)"
+command -v direnv &>/dev/null && eval "$(direnv hook zsh)"
 
 dorun() {
     local services=$(docker-compose config --services)

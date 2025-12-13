@@ -24,14 +24,14 @@ return {
 			-- Custom Ctrl+/ keymaps that work properly with Comment.nvim
 			local api = require("Comment.api")
 
-			vim.keymap.set("n", "<C-_>", api.toggle.linewise.current, {
+			vim.keymap.set("n", "<C-/>", api.toggle.linewise.current, {
 				noremap = true,
 				silent = true,
 				desc = "Toggle comment",
 			})
 
 			-- For visual mode, use the Comment.nvim's proper visual mode function
-			vim.keymap.set("x", "<C-_>", function()
+			vim.keymap.set("x", "<C-/>", function()
 				vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes("<ESC>", true, false, true), "nx",
 					false)
 				api.toggle.linewise(vim.fn.visualmode())

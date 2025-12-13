@@ -149,6 +149,73 @@ After each update, it will open a floating window with some commands. You can fo
 - **LuaSnip** - Snippet engine
 
 
+## Shell and Terminal Configuration
+
+This repository also includes installation scripts for Zsh and Tmux configurations that integrate seamlessly with Neovim.
+
+### Zsh Installation
+
+Install Zsh, Oh My Zsh, and configure with plugins:
+
+**Arch Linux with pacman:**
+```bash
+cd ~/.config/nvim/zsh
+./install.sh --distro arch --pkg-manager pacman
+```
+
+**Arch Linux with yay (AUR):**
+```bash
+./install.sh --distro arch --pkg-manager yay
+```
+
+**Ubuntu with apt:**
+```bash
+./install.sh --distro ubuntu --pkg-manager apt
+```
+
+**Ubuntu with Homebrew:**
+```bash
+./install.sh --distro ubuntu --pkg-manager homebrew
+```
+
+**Using short flags:**
+```bash
+./install.sh -d arch -p pacman
+```
+
+**Skip package installation (only install Oh My Zsh and plugins):**
+```bash
+./install.sh
+```
+
+### Tmux Installation
+
+Install Tmux and TPM (Tmux Plugin Manager):
+
+**Same flag system as Zsh:**
+```bash
+cd ~/.config/nvim/tmux
+./install.sh --distro arch --pkg-manager pacman
+./install.sh --distro ubuntu --pkg-manager apt
+./install.sh -d ubuntu -p homebrew
+```
+
+**Skip package installation:**
+```bash
+./install.sh
+```
+
+### Supported Distributions
+
+| Distribution | Default Package Manager | Alternatives |
+|--------------|------------------------|--------------|
+| Arch Linux   | `pacman`               | `yay`        |
+| Ubuntu       | `apt`                  | `homebrew`   |
+| Debian       | `apt`                  | `homebrew`   |
+| Fedora       | `dnf`                  | `homebrew`   |
+
+For more details on adding new distributions or customizing package management, see [lib/README.md](lib/README.md).
+
 ## File Structure
 
 ```
@@ -172,6 +239,15 @@ After each update, it will open a floating window with some commands. You can fo
 │       ├── telescope.lua
 │       ├── treesitter.lua
 │       └── ....
+├── lib/
+│   ├── package-manager.sh # Multi-distro package management
+│   └── README.md          # Library documentation
+├── zsh/
+│   ├── install.sh         # Zsh installation script
+│   └── .zshrc            # Zsh configuration
+└── tmux/
+    ├── install.sh         # Tmux installation script
+    └── .tmux.conf        # Tmux configuration
 
 ```
 

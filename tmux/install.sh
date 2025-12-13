@@ -4,15 +4,21 @@
 # Exit on error
 set -e
 
-# Function to print messages
-log() {
-    echo -e "\e[32m$1\e[0m"
-}
+# Source the shared package management library
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/../lib/package-manager.sh"
 
-# Install tmux
-log "Installing tmux..."
-sudo apt update
-sudo apt install -y tmux git
+# Parse installation flags
+parse_install_flags "$@"
+
+# Install packages if distro/package manager specified
+if [[ -n "$DISTRO" || -n "$PKG_MANAGER" ]]; then
+    install_packages "tmux_essentials"
+else
+    log "Skipping package installation (no --distro or --pkg-manager specified)"
+    log "Run with --distro <distro> --pkg-manager <pkg_manager> to install packages"
+    log "Example: ./install.sh --distro arch --pkg-manager pacman"
+fi
 
 # Install TPM if not already installed
 if [ -d "$HOME/.tmux/plugins/tpm" ]; then

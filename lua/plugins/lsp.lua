@@ -258,6 +258,24 @@ return {
 		vim.lsp.config("pylsp", {
 			capabilities = capabilities,
 			on_attach = on_attach,
+			settings = {
+				pylsp = {
+					plugins = {
+						isort = { enabled = false },
+						ruff = { enabled = false },
+						autopep8 = { enabled = false },
+						yapf = { enabled = false },
+						mypy = {
+							enabled = true,
+							live_mode = true, -- Real-time type checking
+							strict = false, -- Set to true for stricter checking
+						},
+						pycodestyle = {
+							enabled = false
+						}
+					},
+				},
+			},
 		})
 
 		vim.lsp.enable("solidity_ls")
@@ -279,6 +297,8 @@ return {
 				'package.json',
 			},
 		})
+
+		vim.lsp.enable("jsonls")
 
 		vim.diagnostic.config({
 			virtual_text = {

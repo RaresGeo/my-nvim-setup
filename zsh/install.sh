@@ -3,15 +3,21 @@
 # Exit on error
 set -e
 
-# Function to print messages
-log() {
-    echo -e "\e[32m$1\e[0m"
-}
+# Source the shared package management library
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$SCRIPT_DIR/../lib/package-manager.sh"
 
-# Install Zsh
-log "Installing Zsh..."
-sudo apt update
-sudo apt install -y zsh curl git
+# Parse installation flags
+parse_install_flags "$@"
+
+# Install packages if distro/package manager specified
+if [[ -n "$DISTRO" || -n "$PKG_MANAGER" ]]; then
+    install_packages "zsh_essentials"
+else
+    log "Skipping package installation (no --distro or --pkg-manager specified)"
+    log "Run with --distro <distro> --pkg-manager <pkg_manager> to install packages"
+    log "Example: ./install.sh --distro arch --pkg-manager pacman"
+fi
 
 # Install Oh My Zsh if not already installed
 if [ -d "$HOME/.oh-my-zsh" ]; then
