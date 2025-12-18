@@ -125,33 +125,74 @@ GOPATH=$(go env GOPATH 2>/dev/null)
 command -v mise &>/dev/null && eval "$(mise activate zsh)"
 command -v direnv &>/dev/null && eval "$(direnv hook zsh)"
 
-dorun() {
-    local services=$(docker-compose config --services)
-    local service_count=$(echo "$services" | wc -l)
-    
-    if [ "$service_count" -eq 1 ]; then
-        docker-compose run --rm $services "$@"
-    else
-        docker-compose run --rm "$@"
-    fi
-}
+if command -v zoxide &>/dev/null; then
+	eval "$(zoxide init zsh)"
+	alias cd="z"
+fi
 
-doup() { 
-	docker-compose up "$@"
-}
+if command -v eza &> /dev/null; then
+  alias ls='eza -lh --group-directories-first --icons=auto'
+  alias lsa='ls -a'
+  alias lt='eza --tree --level=2 --long --icons --git'
+  alias lta='lt -a'
+fi
 
-fcd() {
-	cd "$(find . -type d | fzf)"
-}
+if command -v docker &> /dev/null; then
+	dorun() {
+	    local services=$(docker compose config --services)
+	    local service_count=$(echo "$services" | wc -l)
+	    
+	    if [ "$service_count" -eq 1 ]; then
+		docker compose run --rm $services "$@"
+	    else
+		docker compose run --rm "$@"
+	    fi
+	}
 
-fzf_file() {
-	echo "$(find . -type f | fzf)"
-}
+	doup() { 
+		docker compose up "$@"
+	}
+fi
 
+if command -v fzf &> /dev/null; then
+	ff() {
+		local search_dir="${1:-.}"
+		local file
+		file=$(find "$search_dir" -type f | fzf --preview 'bat --style=numbers --color=always {}') || return
+		[[ -n "$file" ]] && echo "$file"
+	}
 
+	fcd() {
+		local search_dir="${1:-.}"
+		local preview_cmd
 
-alias delete-branches='~/delete_all_git_branches.sh'
+		if command -v eza &>/dev/null; then
+		preview_cmd='eza -lh --group-directories-first --icons=auto {}'
+		else
+		preview_cmd='ls -la {}'
+		fi
+
+		local dir
+		dir=$(find "$search_dir" -type d | fzf \
+		--preview "$preview_cmd") || return
+		[[ -n "$dir" ]] && cd "$dir"
+	}
+
+	fnvim() {
+		fcd "$@" || return
+		nvim .
+	}
+
+  if [[ -f /usr/share/fzf/key-bindings.zsh ]]; then
+    source /usr/share/fzf/key-bindings.zsh
+  fi
+fi
+
+alias delete-branches='~/.my_scripts/delete_all_git_branches.sh'
 alias prs="gh pr list --author=\"@me\" --json number,title,url"
 alias ghurl="git remote -v | grep origin | grep fetch | awk '{print $2}' | sed 's/git@github.com:/https:\/\/github.com\//' | sed 's/.git$//g'"
 
 alias xcopy='xclip -sel clip'
+
+alias wakehp='wakeonlan $(cat ~/.ssh/homelab_hp_mac)'
+alias sshhp='ssh daniel@$(cat ~/.ssh/homelab_hp_ip)'
