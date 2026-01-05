@@ -1,4 +1,5 @@
 -- Editor options
+vim.opt.rnu = true
 vim.opt.nu = true
 vim.opt.paste = false
 vim.opt.clipboard = "unnamedplus"
