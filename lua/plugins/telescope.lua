@@ -202,12 +202,15 @@ return {
 
         local terminal_buf = nil -- Track the terminal buffer
         local terminal_win = nil -- Track the terminal window
+        local terminal_height = 20 -- Track the terminal height
 
         local function toggle_terminal_split()
             print("Toggling terminal split")
 
             -- Check if terminal window exists and is visible
             if terminal_win and vim.api.nvim_win_is_valid(terminal_win) then
+                -- Save the current height before closing
+                terminal_height = vim.api.nvim_win_get_height(terminal_win)
                 -- Hide the terminal split
                 vim.api.nvim_win_close(terminal_win, false)
                 terminal_win = nil
@@ -225,7 +228,7 @@ return {
 
             -- Create horizontal split at the bottom
             vim.cmd("botright split")
-            vim.cmd("resize 20")
+            vim.cmd("resize " .. terminal_height)
 
             -- Check if we have an existing terminal buffer
             if terminal_buf and vim.api.nvim_buf_is_loaded(terminal_buf) then
@@ -264,7 +267,6 @@ return {
 
         -- Key mappings
         vim.keymap.set("n", "<leader>tr", "<cmd>Telescope resume<cr>")
-        vim.keymap.set("n", "<C-;>", show_recent_files_picker, { desc = "Show recent files picker" })
         vim.keymap.set("n", "<leader><Tab>", show_recent_files_picker, { desc = "Show recent files picker" })
         vim.keymap.set("n", "<M-`>", toggle_terminal_split,
             { desc = "Toggle between recent terminal and file" })

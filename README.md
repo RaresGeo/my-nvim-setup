@@ -73,7 +73,7 @@ After each update, it will open a floating window with some commands. You can fo
 | `<leader>fg`               | Live grep (Telescope)    |
 | `<leader>fb`               | Find buffers (Telescope) |
 | `<leader>fh`               | Help tags (Telescope)    |
-| `<C-;>` or `<leader><Tab>` | Recent files picker      |
+| `<leader><Tab>` | Recent files picker      |
 
 ### Harpoon (Quick File Switching)
 
