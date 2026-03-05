@@ -25,8 +25,10 @@ return {
             group = vim.api.nvim_create_augroup("TmuxNavTermRestore", { clear = true }),
             callback = function()
                 local buf = vim.api.nvim_get_current_buf()
-                if vim.bo[buf].buftype == "terminal" and buf_was_terminal[buf] then
-                    vim.cmd.startinsert()
+                if vim.bo[buf].buftype == "terminal" and buf_was_terminal[buf] ~= false then
+                    vim.schedule(function()
+                        vim.cmd.startinsert()
+                    end)
                 end
             end,
         })
