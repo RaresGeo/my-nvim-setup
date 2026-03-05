@@ -135,7 +135,7 @@ GOPATH=$(go env GOPATH 2>/dev/null)
 command -v mise &>/dev/null && eval "$(mise activate zsh)"
 command -v direnv &>/dev/null && eval "$(direnv hook zsh)"
 
-if command -v zoxide &>/dev/null; then
+if command -v zoxide &>/dev/null && [[ $- == *i* ]]; then
 	eval "$(zoxide init zsh)"
 	alias cd="z"
 fi
