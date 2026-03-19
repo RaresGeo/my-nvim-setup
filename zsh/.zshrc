@@ -206,3 +206,6 @@ alias xcopy='xclip -sel clip'
 
 alias wakehp='wakeonlan $(cat ~/.ssh/homelab_hp_mac)'
 alias sshhp='ssh daniel@$(cat ~/.ssh/homelab_hp_ip)'
+passman() { 
+    /.topsecret/passman.py "$@"
+}
