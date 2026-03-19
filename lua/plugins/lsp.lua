@@ -83,6 +83,7 @@ return {
         vim.lsp.enable("arduino_language_server")
         vim.lsp.enable("html_ls")
         vim.lsp.enable("css_ls")
+        vim.lsp.enable("svelte")
 
         -- Configure diagnostics UI
         vim.diagnostic.config({
