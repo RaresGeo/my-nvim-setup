@@ -84,6 +84,7 @@ return {
         vim.lsp.enable("html_ls")
         vim.lsp.enable("css_ls")
         vim.lsp.enable("svelte")
+        vim.lsp.enable("tailwind.css")
 
         -- Configure diagnostics UI
         vim.diagnostic.config({
