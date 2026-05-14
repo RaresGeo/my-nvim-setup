@@ -132,3 +132,41 @@ end, {
     bang = true, -- Allows :CpRelPath! (silent mode)
     desc = "Copy relative file path to clipboard",
 })
+
+vim.api.nvim_create_user_command("CpAbsDir", function(opts)
+    local file = vim.fn.expand("%")
+    if file == "" then
+        vim.notify("No file name detected (unsaved buffer?)", vim.log.levels.ERROR)
+        return
+    end
+
+    local abs_dir = vim.fn.expand("%:p:h") -- Absolute directory path
+    vim.fn.setreg("+", abs_dir)            -- Copy to system clipboard
+
+    -- Only show notification if not called with ! (e.g., :CpAbsDir!)
+    if not opts.bang then
+        vim.notify("Copied ABSOLUTE directory to clipboard:\n" .. abs_dir, vim.log.levels.INFO)
+    end
+end, {
+    bang = true, -- Allows :CpAbsDir! (silent mode)
+    desc = "Copy absolute directory path to clipboard",
+})
+
+vim.api.nvim_create_user_command("CpRelDir", function(opts)
+    local file = vim.fn.expand("%")
+    if file == "" then
+        vim.notify("No file name detected (unsaved buffer?)", vim.log.levels.ERROR)
+        return
+    end
+
+    local rel_dir = vim.fn.expand("%:.:h") -- Directory relative to working directory
+    vim.fn.setreg("+", rel_dir)            -- Copy to system clipboard
+
+    -- Only show notification if not called with ! (e.g., :CpRelDir!)
+    if not opts.bang then
+        vim.notify("Copied RELATIVE directory to clipboard:\n" .. rel_dir, vim.log.levels.INFO)
+    end
+end, {
+    bang = true, -- Allows :CpRelDir! (silent mode)
+    desc = "Copy relative directory path to clipboard",
+})
