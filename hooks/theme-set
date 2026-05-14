@@ -1,0 +1,22 @@
+#!/bin/bash
+
+# Omarchy theme-set hook: hotswap tmux, zsh, and neovim themes
+# Installed by symlinking to ~/.config/omarchy/hooks/theme-set
+
+THEME_DIR="$HOME/.config/omarchy/current/theme"
+
+# Reload tmux if running
+if command -v tmux &>/dev/null && tmux list-sessions &>/dev/null; then
+    tmux source-file ~/.tmux.conf 2>/dev/null
+fi
+
+# Signal running neovim instances to reload colorscheme
+for addr in /run/user/$(id -u)/nvim.*.0 /tmp/nvim.*/0; do
+    if [[ -S "$addr" ]]; then
+        nvim --server "$addr" --remote-send '<Cmd>doautocmd FocusGained<CR>' 2>/dev/null &
+    fi
+done
+
+# Signal running zsh shells to reload theme
+# Send USR1 to interactive zsh processes owned by the current user
+pkill -USR1 -u "$(id -u)" zsh 2>/dev/null

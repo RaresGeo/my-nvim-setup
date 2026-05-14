@@ -27,11 +27,6 @@ After each update, it will open a floating window with some commands. You can fo
 
 ## Key Features
 
-### 🎨 **Appearance**
-
-- **Catppuccin** and **Everforest** colorscheme
-- **Treesitter** syntax highlighting
-
 ### 🔍 **File Navigation**
 
 - **Telescope** for fuzzy finding files, buffers, and live grep
@@ -141,14 +136,6 @@ After each update, it will open a floating window with some commands. You can fo
 - **oil.nvim** - File explorer
 - **harpoon** - Quick file navigation
 
-### Language Support
-
-- **nvim-lspconfig** - LSP configurations
-- **nvim-treesitter** - Syntax highlighting
-- **blink-cmp** - Auto-completion engine
-- **LuaSnip** - Snippet engine
-
-
 ## Shell and Terminal Configuration
 
 This repository also includes installation scripts for Zsh and Tmux configurations that integrate seamlessly with Neovim.
@@ -237,7 +224,6 @@ For more details on adding new distributions or customizing package management, 
 │       ├── metals.lua
 │       ├── oil.lua
 │       ├── telescope.lua
-│       ├── treesitter.lua
 │       └── ....
 ├── lib/
 │   ├── package-manager.sh # Multi-distro package management
@@ -298,18 +284,3 @@ This configuration is designed to be easily extensible. To add new plugins:
 1. Create a new file in `lua/plugins/`
 2. Return a plugin specification table
 3. Restart Neovim or run `:Lazy sync`
-
-## Troubleshooting
-
-- **Plugin issues**: Run `:Lazy health` to check plugin status
-- **LSP issues**: Run `:LspInfo` to check language server status
-- **Treesitter issues**: Run `:TSInstallInfo` to check parser status
-
-## Performance
-
-This configuration is optimized for performance with:
-
-- Lazy loading of plugins
-- Efficient file searching with ripgrep
-- Modern LSP setup with proper capabilities
-- Minimal startup time with lazy.nvim

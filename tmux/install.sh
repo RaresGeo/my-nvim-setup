@@ -32,6 +32,19 @@ fi
 log "Setting up .tmux.conf symlink..."
 cd ~ && ln -sf .config/nvim/tmux/.tmux.conf ~/.tmux.conf && cd -
 
+# Set up omarchy theme integration
+log "Setting up omarchy theme integration..."
+mkdir -p ~/.config/omarchy/themed ~/.config/omarchy/hooks
+ln -sf ~/.config/nvim/tmux/tmux.conf.tpl ~/.config/omarchy/themed/tmux.conf.tpl
+ln -sf ~/.config/nvim/zsh/zsh-colors.tpl ~/.config/omarchy/themed/zsh-colors.tpl
+ln -sf ~/.config/nvim/hooks/theme-set ~/.config/omarchy/hooks/theme-set
+
+# Generate theme files for current theme if omarchy is installed
+if command -v omarchy-theme-refresh &>/dev/null; then
+    log "Refreshing omarchy theme to generate tmux/zsh configs..."
+    omarchy-theme-refresh
+fi
+
 # Handle tmux plugin installation
 if [ -n "$TMUX" ]; then
     # We're in tmux, source the config

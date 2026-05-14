@@ -72,8 +72,28 @@ CASE_SENSITIVE="true"
 # Add wisely, as too many plugins slow down shell startup.
 plugins=(git zsh-autosuggestions zsh-syntax-highlighting)
 
+# Theme colors: auto-loaded from omarchy (with fallback)
+OMARCHY_THEME_DIR="$HOME/.config/omarchy/current/theme"
+if [[ -f "$OMARCHY_THEME_DIR/zsh-colors" ]]; then
+    [[ -f "$OMARCHY_THEME_DIR/light.mode" ]] && SOLARIZED_THEME="light" || SOLARIZED_THEME="dark"
+    source "$OMARCHY_THEME_DIR/zsh-colors"
+else
+    source ~/.config/nvim/zsh/flexoki-light.zsh-colors
+fi
+
 source $ZSH/oh-my-zsh.sh
 unsetopt share_history
+
+# Hotswap theme on USR1 signal (sent by omarchy theme-set hook)
+TRAPUSR1() {
+    if [[ -f "$OMARCHY_THEME_DIR/zsh-colors" ]]; then
+        [[ -f "$OMARCHY_THEME_DIR/light.mode" ]] && SOLARIZED_THEME="light" || SOLARIZED_THEME="dark"
+        source "$OMARCHY_THEME_DIR/zsh-colors"
+    fi
+    # Re-source agnoster to pick up new colors
+    source "$ZSH/themes/agnoster.zsh-theme"
+    zle && zle reset-prompt
+}
 
 PROMPT_INDENT=5
 
@@ -83,7 +103,7 @@ prompt_end() {
   else
     echo -n " %{%k%}"
   fi
-  echo -n "\n${(l:$PROMPT_INDENT:: :)}%{%F{blue}%}╰────➤%{%f%}"
+  echo -n "\n${(l:$PROMPT_INDENT:: :)}%{%F{${PROMPT_ARROW_COLOR:-blue}}%}╰────➤%{%f%}"
 }
 
 # User configuration
