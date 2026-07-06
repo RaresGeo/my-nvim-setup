@@ -48,7 +48,7 @@ After each update, it will open a floating window with some commands. You can fo
 ### ✨ **Developer Experience**
 
 - Auto-formatting on save
-- Intelligent commenting with context awareness (also works in jsx/tsx)
+- Intelligent commenting via Neovim's built-in commenting with context awareness (also works in jsx/tsx)
 - Snippet support
 - LSP-powered code navigation and actions
 - Git blame
@@ -108,6 +108,7 @@ After each update, it will open a floating window with some commands. You can fo
 | `<C-/>` | Toggle line comment               |
 | `gcc`   | Toggle line comment (normal mode) |
 | `gc`    | Toggle comment (visual mode)      |
+| `gbc`   | Toggle block comment              |
 
 ### Metals (Scala) Specific
 
