@@ -86,6 +86,8 @@ return {
         vim.lsp.enable("svelte")
         vim.lsp.enable("tailwind.css")
         vim.lsp.enable("bash")
+        vim.lsp.enable("laravel_ls")
+        vim.lsp.enable("intelephense")
 
         -- Configure diagnostics UI
         vim.diagnostic.config({
