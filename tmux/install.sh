@@ -32,6 +32,15 @@ fi
 log "Setting up .tmux.conf symlink..."
 cd ~ && ln -sf .config/nvim/tmux/.tmux.conf ~/.tmux.conf && cd -
 
+# Omarchy ships its own ~/.config/tmux/tmux.conf. tmux loads that *after*
+# ~/.tmux.conf, so it silently overrides everything here -- prefix, bindings,
+# theme, and continuum's auto-save hook. Drop it so this config wins; running
+# omarchy-refresh-tmux puts it back if it's ever wanted.
+if [ -f ~/.config/tmux/tmux.conf ]; then
+    log "Removing omarchy's ~/.config/tmux/tmux.conf (it would override ~/.tmux.conf)..."
+    rm -f ~/.config/tmux/tmux.conf
+fi
+
 # Set up omarchy theme integration
 log "Setting up omarchy theme integration..."
 mkdir -p ~/.config/omarchy/themed ~/.config/omarchy/hooks

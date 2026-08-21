@@ -3,8 +3,6 @@
 # Omarchy theme-set hook: hotswap tmux, zsh, and neovim themes
 # Installed by symlinking to ~/.config/omarchy/hooks/theme-set
 
-THEME_DIR="$HOME/.config/omarchy/current/theme"
-
 # Reload tmux if running
 if command -v tmux &>/dev/null && tmux list-sessions &>/dev/null; then
     tmux source-file ~/.tmux.conf 2>/dev/null

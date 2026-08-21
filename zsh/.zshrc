@@ -72,24 +72,26 @@ CASE_SENSITIVE="true"
 # Add wisely, as too many plugins slow down shell startup.
 plugins=(git zsh-autosuggestions zsh-syntax-highlighting)
 
-# Theme colors: auto-loaded from omarchy (with fallback)
-OMARCHY_THEME_DIR="$HOME/.config/omarchy/current/theme"
-if [[ -f "$OMARCHY_THEME_DIR/zsh-colors" ]]; then
-    [[ -f "$OMARCHY_THEME_DIR/light.mode" ]] && SOLARIZED_THEME="light" || SOLARIZED_THEME="dark"
+# Theme colors: auto-loaded from omarchy
+OMARCHY_THEME_DIR="$HOME/.local/state/omarchy/current/theme"
+omarchy_load_theme() {
+    [[ -f "$OMARCHY_THEME_DIR/zsh-colors" ]] || return
+    if grep -q '^[[:space:]]*mode[[:space:]]*=[[:space:]]*"light"' \
+        "$OMARCHY_THEME_DIR/colors.toml" 2>/dev/null; then
+        SOLARIZED_THEME="light"
+    else
+        SOLARIZED_THEME="dark"
+    fi
     source "$OMARCHY_THEME_DIR/zsh-colors"
-else
-    source ~/.config/nvim/zsh/flexoki-light.zsh-colors
-fi
+}
+omarchy_load_theme
 
 source $ZSH/oh-my-zsh.sh
 unsetopt share_history
 
 # Hotswap theme on USR1 signal (sent by omarchy theme-set hook)
 TRAPUSR1() {
-    if [[ -f "$OMARCHY_THEME_DIR/zsh-colors" ]]; then
-        [[ -f "$OMARCHY_THEME_DIR/light.mode" ]] && SOLARIZED_THEME="light" || SOLARIZED_THEME="dark"
-        source "$OMARCHY_THEME_DIR/zsh-colors"
-    fi
+    omarchy_load_theme
     # Re-source agnoster to pick up new colors
     source "$ZSH/themes/agnoster.zsh-theme"
     zle && zle reset-prompt
