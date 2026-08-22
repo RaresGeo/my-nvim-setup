@@ -33,7 +33,7 @@ if [[ " $* " == *" --no-plugins "* ]]; then
     log "Skipping plugin bootstrap (--no-plugins)."
 elif command -v nvim &>/dev/null; then
     log "Bootstrapping lazy.nvim plugins (this can take a minute)..."
-    nvim --headless "+Lazy! restore" +qa 2>&1 | tail -5 || \
+    nvim --headless "+Lazy! restore" +qa </dev/null 2>&1 | tail -5 || \
         warn "Plugin bootstrap reported errors; open nvim and run :Lazy to check."
 else
     warn "nvim is not installed; skipping plugin bootstrap."
