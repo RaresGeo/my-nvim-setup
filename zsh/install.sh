@@ -1,23 +1,15 @@
 #!/bin/bash
-# Source: https://github.com/MNMaqsood/oh-my-zsh-installer/blob/main/install_oh_my_zsh.sh
-# Exit on error
+# Zsh module: oh-my-zsh + plugins, symlink ~/.zshrc, make zsh the login shell.
+# Original oh-my-zsh bootstrap adapted from
+# https://github.com/MNMaqsood/oh-my-zsh-installer
+
 set -e
 
-# Source the shared package management library
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$SCRIPT_DIR/../lib/package-manager.sh"
+source "$(cd -P "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/package-manager.sh"
+module_init "${BASH_SOURCE[0]}"
 
-# Parse installation flags
 parse_install_flags "$@"
-
-# Install packages if distro/package manager specified
-if [[ -n "$DISTRO" || -n "$PKG_MANAGER" ]]; then
-    install_packages "zsh_essentials"
-else
-    log "Skipping package installation (no --distro or --pkg-manager specified)"
-    log "Run with --distro <distro> --pkg-manager <pkg_manager> to install packages"
-    log "Example: ./install.sh --distro arch --pkg-manager pacman"
-fi
+install_packages "zsh_essentials"
 
 # Install Oh My Zsh if not already installed
 if [ -d "$HOME/.oh-my-zsh" ]; then
@@ -43,12 +35,17 @@ else
     log "Zsh syntax highlighting already installed. Skipping."
 fi
 
-# Set up symlink
 log "Setting up .zshrc symlink..."
-cd ~ && ln -sf .config/nvim/zsh/.zshrc ~/.zshrc && cd -
+link zsh/.zshrc "$HOME/.zshrc"
+
+run_integration omarchy
 
 # Set Zsh as the default shell
-log "Setting Zsh as the default shell..."
-chsh -s $(which zsh)
+if [[ "$SHELL" == *zsh ]]; then
+    log "Zsh is already the default shell. Skipping chsh."
+else
+    log "Setting Zsh as the default shell..."
+    chsh -s "$(command -v zsh)"
+fi
 
 log "Zsh installation completed!"

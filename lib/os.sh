@@ -79,3 +79,13 @@ check_omarchy_version() {
 
     return 0
 }
+
+# Decide whether a named integration applies to this host. run_integration
+# consults this before sourcing a module's <name>.sh, so an Omarchy-only step
+# simply does not run on a plain Arch, Ubuntu, or macOS box.
+integration_supported() {
+    case "$1" in
+        omarchy) check_omarchy_version ;;
+        *)       return 0 ;;
+    esac
+}

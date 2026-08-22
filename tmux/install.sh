@@ -1,24 +1,13 @@
 #!/bin/bash
-# ~/.config/nvim/tmux/install.sh
+# Tmux module: symlink ~/.tmux.conf, install TPM, install plugins.
 
-# Exit on error
 set -e
 
-# Source the shared package management library
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$SCRIPT_DIR/../lib/package-manager.sh"
+source "$(cd -P "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/package-manager.sh"
+module_init "${BASH_SOURCE[0]}"
 
-# Parse installation flags
 parse_install_flags "$@"
-
-# Install packages if distro/package manager specified
-if [[ -n "$DISTRO" || -n "$PKG_MANAGER" ]]; then
-    install_packages "tmux_essentials"
-else
-    log "Skipping package installation (no --distro or --pkg-manager specified)"
-    log "Run with --distro <distro> --pkg-manager <pkg_manager> to install packages"
-    log "Example: ./install.sh --distro arch --pkg-manager pacman"
-fi
+install_packages "tmux_essentials"
 
 # Install TPM if not already installed
 if [ -d "$HOME/.tmux/plugins/tpm" ]; then
@@ -28,31 +17,12 @@ else
     git clone https://github.com/tmux-plugins/tpm ~/.tmux/plugins/tpm
 fi
 
-# Set up symlink
 log "Setting up .tmux.conf symlink..."
-cd ~ && ln -sf .config/nvim/tmux/.tmux.conf ~/.tmux.conf && cd -
+link tmux/.tmux.conf "$HOME/.tmux.conf"
 
-# Omarchy ships its own ~/.config/tmux/tmux.conf. tmux loads that *after*
-# ~/.tmux.conf, so it silently overrides everything here -- prefix, bindings,
-# theme, and continuum's auto-save hook. Drop it so this config wins; running
-# omarchy-refresh-tmux puts it back if it's ever wanted.
-if [ -f ~/.config/tmux/tmux.conf ]; then
-    log "Removing omarchy's ~/.config/tmux/tmux.conf (it would override ~/.tmux.conf)..."
-    rm -f ~/.config/tmux/tmux.conf
-fi
-
-# Set up omarchy theme integration
-log "Setting up omarchy theme integration..."
-mkdir -p ~/.config/omarchy/themed ~/.config/omarchy/hooks
-ln -sf ~/.config/nvim/tmux/tmux.conf.tpl ~/.config/omarchy/themed/tmux.conf.tpl
-ln -sf ~/.config/nvim/zsh/zsh-colors.tpl ~/.config/omarchy/themed/zsh-colors.tpl
-ln -sf ~/.config/nvim/hooks/theme-set ~/.config/omarchy/hooks/theme-set
-
-# Generate theme files for current theme if omarchy is installed
-if command -v omarchy-theme-refresh &>/dev/null; then
-    log "Refreshing omarchy theme to generate tmux/zsh configs..."
-    omarchy-theme-refresh
-fi
+# Anything Omarchy-specific (theme template, config precedence) lives in
+# tmux/omarchy.sh and only runs on an Omarchy host.
+run_integration omarchy
 
 # Handle tmux plugin installation
 if [ -n "$TMUX" ]; then
