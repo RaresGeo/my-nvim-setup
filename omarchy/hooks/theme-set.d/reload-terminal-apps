@@ -1,7 +1,12 @@
 #!/bin/bash
 
-# Omarchy theme-set hook: hotswap tmux, zsh, and neovim themes
-# Installed by symlinking to ~/.config/omarchy/hooks/theme-set
+# Omarchy theme-set hook: hotswap tmux, zsh, and neovim themes.
+#
+# Omarchy regenerates the themed templates on every theme change, but the
+# running terminal apps have already read the old ones. This pokes each of them
+# so a theme switch lands without restarting anything.
+#
+# Installed by omarchy/install.sh into ~/.config/omarchy/hooks/theme-set.d/
 
 # Reload tmux if running
 if command -v tmux &>/dev/null && tmux list-sessions &>/dev/null; then
