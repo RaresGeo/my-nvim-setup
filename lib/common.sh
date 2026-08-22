@@ -80,13 +80,23 @@ link() {
 
 # Run a module's optional integration script, e.g. `run_integration omarchy`
 # from within a module directory. Missing scripts are not an error -- that is
-# how a module says "nothing special to do here".
+# how a module says "nothing special to do here". Nor is an unsupported host:
+# integration_supported (defined in os.sh) decides whether the target platform
+# is actually present, which is what keeps these modules installable off
+# Omarchy.
 run_integration() {
     local name="$1"
     local dir="${2:-$MODULE_DIR}"
     local script="$dir/${name}.sh"
 
     [[ -f "$script" ]] || return 0
+
+    if declare -f integration_supported &>/dev/null; then
+        integration_supported "$name" || {
+            log "Skipping $name integration (not applicable on this host)."
+            return 0
+        }
+    fi
 
     info "Running $name integration for $(basename "$dir")..."
     # shellcheck source=/dev/null
