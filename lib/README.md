@@ -1,293 +1,134 @@
-# Package Manager Library
+# Shared Libraries
 
-This library provides cross-distribution package management for the dotfiles installation scripts.
+Three files, sourced by the module install scripts.
 
-## Overview
+| File | Responsibility |
+|------|----------------|
+| `common.sh` | Repo root resolution, logging, symlinking, module bootstrapping |
+| `os.sh` | Distro detection and Omarchy detection |
+| `package-manager.sh` | Cross-distro package installation |
 
-The `package-manager.sh` library abstracts package installation across different Linux distributions and package managers. It allows installation scripts to work on Arch, Ubuntu, Fedora, and other distros without modification.
+Sourcing `package-manager.sh` pulls in the other two, so a module only needs the
+one line.
 
-## Usage
+## common.sh
 
-### In Installation Scripts
+Sets `DOTFILES_DIR` to the repo root, resolved from `common.sh`'s own location
+through any symlinks. That is what lets the checkout live anywhere.
 
-Source the library and use its functions:
+| Function | Purpose |
+|----------|---------|
+| `module_init "${BASH_SOURCE[0]}"` | Sets `MODULE_DIR` and `MODULE_NAME` |
+| `link <repo-path> <dest>` | Symlink `$DOTFILES_DIR/<repo-path>` to `<dest>`, creating parents and backing up anything real already there |
+| `backup_path <path>` | Move a real file/directory to `<path>.bak.<timestamp>`; existing symlinks are left alone so re-runs stay idempotent |
+| `run_integration <name>` | Source `$MODULE_DIR/<name>.sh` if it exists and the host supports it |
+| `log` / `info` / `warn` / `error` | Colored output; `error` goes to stderr |
+
+## os.sh
+
+| Function | Returns |
+|----------|---------|
+| `detect_os` | `arch`, `ubuntu`, `debian`, `fedora`, `rhel`, `macos`, or empty |
+| `is_omarchy` | True when Omarchy is installed |
+| `omarchy_version` | e.g. `4.0.0` |
+| `is_omarchy_quattro` | True when the major version is at least `OMARCHY_MIN_MAJOR` (4) |
+| `check_omarchy_version` | Same, but warns on an Omarchy too old to support |
+| `integration_supported <name>` | Consulted by `run_integration`; gates `omarchy` on `check_omarchy_version` |
+
+`detect_os` reads `ID` from `/etc/os-release` and falls back to the `ID_LIKE`
+chain, so derivatives (EndeavourOS, Pop!\_OS, Linux Mint, Rocky, ...) resolve to
+their base.
+
+Omarchy support is pinned to Quattro (4.x). Earlier versions configured Hyprland
+through `.conf` files and kept the omarchy tree in `~/.local/share/omarchy`;
+none of the configs here apply to them.
+
+## package-manager.sh
+
+### Usage
 
 ```bash
 #!/bin/bash
 set -e
 
-# Source the library
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$SCRIPT_DIR/../lib/package-manager.sh"
+source "$(cd -P "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/package-manager.sh"
+module_init "${BASH_SOURCE[0]}"
 
-# Parse flags
 parse_install_flags "$@"
-
-# Install packages
-if [[ -n "$DISTRO" || -n "$PKG_MANAGER" ]]; then
-    install_packages "zsh_essentials"
-fi
+install_packages "zsh_essentials"
 ```
 
-### Command Line Flags
+`parse_install_flags` detects the distro and picks its default package manager,
+so no flags are needed in the common case. It ignores flags it does not
+recognise, which is how modules take their own options (`--with-claude`,
+`--no-plugins`) from the same argument list.
 
-Users run installation scripts with flags to specify their environment:
+### Flags
 
 ```bash
-# Specify both distro and package manager
-./install.sh --distro arch --pkg-manager pacman
-./install.sh --distro ubuntu --pkg-manager apt
-
-# Short flags
-./install.sh -d arch -p yay
-
-# Just distro (uses default package manager)
-./install.sh --distro ubuntu  # Uses apt
-
-# No flags (skips package installation)
-./install.sh
+./install.sh                                   # auto-detect
+./install.sh --no-packages                     # config only, no packages
+./install.sh --distro ubuntu                   # override detection, default manager
+./install.sh --distro arch --pkg-manager yay   # override both
+./install.sh -d arch -p yay                    # short forms
 ```
 
-## Supported Distros and Package Managers
+### Supported combinations
 
-| Distribution | Default Package Manager | Alternative Managers |
-|--------------|------------------------|---------------------|
-| Arch Linux   | `pacman`               | `yay`              |
-| Ubuntu       | `apt`                  | `homebrew`         |
-| Debian       | `apt`                  | `homebrew`         |
-| Fedora       | `dnf`                  | `homebrew`         |
-| RHEL         | `dnf`                  | -                  |
-| macOS        | `homebrew`             | -                  |
+| Distribution | Default | Alternatives |
+|--------------|---------|--------------|
+| Arch | `pacman` | `yay` |
+| Ubuntu | `apt` | `homebrew` |
+| Debian | `apt` | `homebrew` |
+| Fedora | `dnf` | `homebrew` |
+| RHEL | `dnf` | — |
+| macOS | `homebrew` | — |
 
-## Adding a New Distribution
+## Extending
 
-To add support for a new distribution:
+### A new package group
 
-### 1. Add Default Package Manager
-
-Edit `lib/package-manager.sh` and add to the `DISTRO_DEFAULT_PKG_MANAGER` array:
-
-```bash
-declare -A DISTRO_DEFAULT_PKG_MANAGER=(
-    [arch]="pacman"
-    [ubuntu]="apt"
-    [mynewdistro]="mypackagemanager"  # Add this line
-)
-```
-
-### 2. Add Package Manager Commands (if new)
-
-If the distribution uses a package manager not already supported, add update and install commands:
-
-```bash
-declare -A PKG_MANAGER_UPDATE=(
-    [pacman]="sudo pacman -Sy"
-    [apt]="sudo apt update"
-    [mypackagemanager]="sudo mypm update"  # Add this
-)
-
-declare -A PKG_MANAGER_INSTALL=(
-    [pacman]="sudo pacman -S --noconfirm --needed"
-    [apt]="sudo apt install -y"
-    [mypackagemanager]="sudo mypm install -y"  # Add this
-)
-```
-
-### 3. Add Package Name Overrides (if needed)
-
-Most packages have the same name across distributions. Only add overrides if package names differ:
-
-```bash
-declare -A PACKAGE_OVERRIDES=(
-    [mynewdistro:git]="git-scm"  # If 'git' is called 'git-scm' on your distro
-)
-```
-
-### 4. Test
-
-```bash
-./zsh/install.sh --distro mynewdistro --pkg-manager mypackagemanager
-./tmux/install.sh --distro mynewdistro --pkg-manager mypackagemanager
-```
-
-## Adding a New Package Group
-
-Package groups define sets of packages that installation scripts need. To add a new group:
+Groups are abstract requirement lists, named `<module>_essentials` by
+convention:
 
 ```bash
 declare -A PACKAGE_GROUPS=(
     [zsh_essentials]="zsh curl git"
-    [tmux_essentials]="tmux git"
-    [neovim_essentials]="neovim gcc make"  # Add this
+    [mymodule_essentials]="foo bar"
 )
 ```
 
-Then use it in your installation script:
+### A new distribution
+
+Add its default package manager:
 
 ```bash
-install_packages "neovim_essentials"
+declare -A DISTRO_DEFAULT_PKG_MANAGER=(
+    [mydistro]="mypm"
+)
 ```
 
-## Package Name Overrides
+Add it to `detect_os` in `os.sh` if `/etc/os-release` needs mapping, and add
+update/install commands if the package manager is new:
 
-When a package has a different name on a specific distribution, add an override:
+```bash
+declare -A PKG_MANAGER_UPDATE=(
+    [mypm]="sudo mypm update"
+)
+
+declare -A PKG_MANAGER_INSTALL=(
+    [mypm]="sudo mypm install -y"
+)
+```
+
+### A package with a different name
+
+Most package names match across distros. Only the exceptions need an entry,
+keyed `distro:generic`:
 
 ```bash
 declare -A PACKAGE_OVERRIDES=(
-    # Format: [distro:generic_name]="actual_name"
-    [fedora:curl]="curl-minimal"
-    [macos:tmux]="tmux"  # Usually same, but can override
+    [ubuntu:fd]="fd-find"
+    [debian:fd]="fd-find"
 )
-```
-
-The library will automatically use the override when installing on that distro.
-
-## API Reference
-
-### Functions
-
-#### `parse_install_flags "$@"`
-Parses command line flags and sets global variables `DISTRO` and `PKG_MANAGER`.
-
-**Flags:**
-- `--distro <name>` or `-d <name>`: Set distribution
-- `--pkg-manager <name>` or `-p <name>`: Set package manager
-
-**Example:**
-```bash
-parse_install_flags "$@"
-```
-
-#### `install_packages <package_group>`
-Installs a group of packages using the configured package manager.
-
-**Arguments:**
-- `package_group`: Name of the package group (e.g., "zsh_essentials")
-
-**Returns:**
-- `0` on success
-- `1` on failure
-
-**Example:**
-```bash
-install_packages "zsh_essentials"
-```
-
-#### `get_default_pkg_manager <distro>`
-Returns the default package manager for a distribution.
-
-**Arguments:**
-- `distro`: Distribution name
-
-**Example:**
-```bash
-PKG_MGR=$(get_default_pkg_manager "arch")  # Returns "pacman"
-```
-
-#### `check_pkg_manager_installed <pkg_manager>`
-Checks if a package manager is installed and provides helpful error messages.
-
-**Arguments:**
-- `pkg_manager`: Package manager name
-
-**Returns:**
-- `0` if installed
-- `1` if not found
-
-#### `log <message>`
-Prints a success/info message in green.
-
-#### `error <message>`
-Prints an error message in red to stderr.
-
-#### `warn <message>`
-Prints a warning message in yellow.
-
-## Troubleshooting
-
-### Package Manager Not Found
-
-**Error:**
-```
-ERROR: Package manager 'yay' is not installed
-```
-
-**Solution:**
-Install the package manager or use an alternative:
-
-```bash
-# For yay on Arch
-git clone https://aur.archlinux.org/yay.git
-cd yay
-makepkg -si
-
-# Or use pacman instead
-./install.sh --distro arch --pkg-manager pacman
-```
-
-### Package Not Available
-
-**Error:**
-```
-ERROR: Failed to install packages: somepackage
-```
-
-**Solution:**
-- Verify the package name is correct for your distribution
-- Add a package name override if the package has a different name
-- Check if the package requires a different package manager (e.g., AUR packages need `yay`)
-
-### Unknown Distro
-
-**Error:**
-```
-ERROR: Unknown distro: mydistro
-```
-
-**Solution:**
-Add your distribution to the library (see "Adding a New Distribution" above).
-
-### Invalid Combination
-
-If you specify a package manager that doesn't make sense for your distro (e.g., `--distro arch --pkg-manager apt`), the library will still attempt to use it. Ensure you're using compatible combinations.
-
-## Design Philosophy
-
-1. **Explicit over implicit**: Users specify their environment rather than auto-detection
-2. **Backwards compatible**: No flags = no package installation (skip gracefully)
-3. **Fail-fast with helpful errors**: Check package manager availability upfront
-4. **DRY principle**: Single source of truth for package management
-5. **Easy to extend**: Adding a distro should take minutes, not hours
-
-## Examples
-
-### Arch Linux with pacman
-```bash
-./zsh/install.sh --distro arch --pkg-manager pacman
-```
-
-### Arch Linux with yay (AUR)
-```bash
-./zsh/install.sh --distro arch --pkg-manager yay
-```
-
-### Ubuntu with apt
-```bash
-./zsh/install.sh --distro ubuntu --pkg-manager apt
-```
-
-### Ubuntu with Homebrew
-```bash
-./zsh/install.sh --distro ubuntu --pkg-manager homebrew
-```
-
-### Using defaults (just distro)
-```bash
-./zsh/install.sh --distro arch  # Uses pacman
-./zsh/install.sh --distro ubuntu  # Uses apt
-```
-
-### Skip package installation
-```bash
-./zsh/install.sh  # No flags, installs only Oh My Zsh and configs
 ```

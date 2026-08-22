@@ -1,287 +1,181 @@
-# Neovim Configuration
+# Dotfiles
 
-My neovim configuration, for a balance of productivity and raw programming.
-While using VSCode, I noticed I had gotten used to too many crutches, so I decided to switch to something faster, but I also didn't want to completely cripple myself.
-This, I find, strikes a good balance.
+Neovim, tmux, zsh, herdr and Hyprland configuration, installed by symlink.
 
-## Dependencies
+This started life as just a neovim config and grew, so it is now organised as a
+set of independent modules. Each module owns a directory with its config and an
+`install.sh`; the top-level `install.sh` just runs them in a sensible order.
 
-Off the top of my head, below are listed some of the dependencies you will need to run this configuration.
+Nothing here assumes the repo lives at a particular path — every script resolves
+the repo root from its own location — so the checkout can sit at
+`~/.config/dotfiles`, `~/dotfiles`, or anywhere else.
 
-### Required
+## Install
 
-- **Neovim** >= 0.9.0
-- **Git**
-- **Node.js** and **npm** (for TypeScript/JavaScript LSP, I personally use `volta` for this)
-- **ripgrep** (`rg`) - Fast file searching for Telescope and ignoring .gitignored files
-- **coursier** (`cs`) - Scala artifact fetching, you will use this to install metals
-- **sbt** - simple build tool for scala projects
-- **Deno** - If working with Deno projects
-
-I installed most of these using `homebrew`
-
-## Plugin Manager
-
-This configuration uses [lazy.nvim](https://github.com/folke/lazy.nvim) as the plugin manager. It will automatically bootstrap itself on first run.
-After each update, it will open a floating window with some commands. You can focus it with your mouse (or probably with C-w also) then use `:q` to close it
-
-## Key Features
-
-### 🔍 **File Navigation**
-
-- **Telescope** for fuzzy finding files, buffers, and live grep
-- **Oil.nvim** for file exploration
-- **Harpoon** for quick file switching
-- Custom recent files picker (I wanted to mimick the functionality of ctrl + tab in VSCode)
-- Toggle between most recent file and most recent terminal `(<Space>\`)`
-
-### 💻 **Language Support**
-
-- **TypeScript/JavaScript** (ts_ls)
-- **Scala** (Metals)
-- **Lua** (lua_ls)
-- **Deno** support
-- **Go** support (gopls)
-- Auto-completion with **blink.cmp** and **emmet-ls**
-- Auto-pairs with **nvim-autopairs**
-
-### ✨ **Developer Experience**
-
-- Auto-formatting on save
-- Intelligent commenting via Neovim's built-in commenting with context awareness (also works in jsx/tsx)
-- Snippet support
-- LSP-powered code navigation and actions
-- Git blame
-
-## Important Keymaps
-
-### Leader Key
-
-- Leader key is set to `<Space>`
-
-### File Navigation
-
-| Keymap                     | Action                   |
-| -------------------------- | ------------------------ |
-| `<leader>e`                | Open file explorer (Oil) |
-| `<leader>ff`               | Find files (Telescope)   |
-| `<leader>fg`               | Live grep (Telescope)    |
-| `<leader>fb`               | Find buffers (Telescope) |
-| `<leader>fh`               | Help tags (Telescope)    |
-| `<leader><Tab>` | Recent files picker      |
-
-### Harpoon (Quick File Switching)
-
-| Keymap      | Action                |
-| ----------- | --------------------- |
-| `<leader>a` | Add file to harpoon   |
-| `<C-e>`     | Open harpoon window   |
-| `<C-S-P>`   | Previous harpoon file |
-| `<C-S-N>`   | Next harpoon file     |
-
-### LSP & Code Navigation
-
-| Keymap       | Action                 |
-| ------------ | ---------------------- |
-| `gd`         | Go to definition       |
-| `gD`         | Go to declaration      |
-| `gi`         | Go to implementation   |
-| `gr`         | Go to references       |
-| `K`          | Show hover information |
-| `<leader>ca` | Code actions           |
-| `<leader>rn` | Rename symbol          |
-| `<leader>f`  | Format buffer          |
-
-### Diagnostics
-
-| Keymap      | Action                           |
-| ----------- | -------------------------------- |
-| `]d`        | Next diagnostic                  |
-| `[d`        | Previous diagnostic              |
-| `<leader>d` | Open diagnostic float            |
-| `<leader>q` | Add diagnostics to location list |
-
-### Commenting
-
-| Keymap  | Action                            |
-| ------- | --------------------------------- |
-| `<C-/>` | Toggle line comment               |
-| `gcc`   | Toggle line comment (normal mode) |
-| `gc`    | Toggle comment (visual mode)      |
-| `gbc`   | Toggle block comment              |
-
-### Metals (Scala) Specific
-
-| Keymap       | Action                    |
-| ------------ | ------------------------- |
-| `<leader>mt` | Toggle Metals tree view   |
-| `<leader>mr` | Reveal in Metals tree     |
-| `<leader>mw` | Metals worksheet commands |
-
-## Plugin List
-
-### Core Functionality
-
-- **lazy.nvim** - Plugin manager
-- **plenary.nvim** - Lua utility functions
-
-### UI & Themes
-
-- **catppuccin/nvim** - Colorscheme
-- **Everforest** - Colorscheme
-- **nvim-web-devicons** - File icons
-
-### File Management
-
-- **telescope.nvim** - Fuzzy finder and picker
-- **oil.nvim** - File explorer
-- **harpoon** - Quick file navigation
-
-## Shell and Terminal Configuration
-
-This repository also includes installation scripts for Zsh and Tmux configurations that integrate seamlessly with Neovim.
-
-### Zsh Installation
-
-Install Zsh, Oh My Zsh, and configure with plugins:
-
-**Arch Linux with pacman:**
 ```bash
-cd ~/.config/nvim/zsh
-./install.sh --distro arch --pkg-manager pacman
+git clone <this-repo> ~/.config/dotfiles
+cd ~/.config/dotfiles
+./install.sh --all
 ```
 
-**Arch Linux with yay (AUR):**
+Or pick modules:
+
 ```bash
-./install.sh --distro arch --pkg-manager yay
+./install.sh nvim tmux
+./install.sh --list          # what applies to this host
+./install.sh --help
 ```
 
-**Ubuntu with apt:**
+Useful flags:
+
+| Flag | Effect |
+|------|--------|
+| `--all` | Every module applicable to this host |
+| `--no-packages` | Skip system package installation |
+| `-d`, `--distro` | Override distro detection |
+| `-p`, `--pkg-manager` | Override package manager (e.g. `yay` over `pacman`) |
+
+Distro and package manager are detected automatically; the flags are only there
+for overriding that. Unrecognised flags are passed straight through to the
+modules, so `./install.sh herdr --with-claude` and `./install.sh nvim
+--no-plugins` work as expected.
+
+Installs are idempotent. Anything real already sitting at a symlink target is
+moved aside to `<path>.bak.<timestamp>` first.
+
+### Migrating from the old layout
+
+This repo used to *be* `~/.config/nvim`. It cannot stay there any more, because
+that path is now a symlink target:
+
 ```bash
-./install.sh --distro ubuntu --pkg-manager apt
+mv ~/.config/nvim ~/.config/dotfiles
+~/.config/dotfiles/install.sh --all
 ```
 
-**Ubuntu with Homebrew:**
-```bash
-./install.sh --distro ubuntu --pkg-manager homebrew
+## Modules
+
+| Module | Installs | Requires Omarchy |
+|--------|----------|------------------|
+| [`nvim`](nvim/README.md) | `~/.config/nvim`, lazy.nvim plugins | no |
+| `tmux` | `~/.tmux.conf`, TPM and plugins | no |
+| `zsh` | `~/.zshrc`, oh-my-zsh and plugins | no |
+| `herdr` | `~/.config/herdr/config.toml` | yes (ships with it) |
+| `omarchy` | Hyprland overrides, theme hooks | yes |
+
+## Omarchy
+
+The setup is built for [Omarchy](https://omarchy.org/) Quattro (4.x) but does
+not require it. Omarchy-specific work is isolated in two places:
+
+- `omarchy/` — a module that is Omarchy-only by definition: the personal
+  Hyprland overrides and the theme-set hook.
+- `<module>/omarchy.sh` — optional per-module integration, sourced only when
+  `lib/os.sh` confirms an Omarchy Quattro host. On a plain Arch, Ubuntu, Fedora
+  or macOS box these are skipped and the module installs without them.
+
+So `tmux` and `zsh` install their configs everywhere, and additionally register
+their themed templates with Omarchy when it is present.
+
+### What Omarchy drives
+
+Colors are not checked into this repo. Omarchy generates them from the active
+theme's palette through templates that the modules register:
+
+| Template | Generates |
+|----------|-----------|
+| `tmux/tmux.conf.tpl` | tmux status line colors |
+| `zsh/zsh-colors.tpl` | agnoster prompt segment colors |
+
+Neovim resolves its colorscheme at runtime from
+`~/.local/state/omarchy/current/theme/` — see `nvim/lua/plugins/colorscheme.lua`.
+
+`omarchy/hooks/theme-set.d/reload-terminal-apps` is what makes a theme switch
+land without restarts: it re-sources tmux, sends a synthetic `FocusGained` to
+running neovim instances, and signals zsh with `SIGUSR1`.
+
+### Hyprland
+
+Only the files that actually diverge from Omarchy's defaults are tracked:
+`bindings.lua`, `input.lua`, `looknfeel.lua`, `autostart.lua`. Omarchy's
+`hyprland.lua` requires each of these after loading its own defaults, so
+upstream improvements keep arriving.
+
+Deliberately not tracked:
+
+- `hyprland.lua` — unmodified from the default; letting Omarchy own it means
+  updates to the entrypoint are not blocked by this repo.
+- `monitors.lua` — machine-specific display layout.
+
+`shell.json`, disabled plugins and other per-device Omarchy settings are also
+left out, for the same reason.
+
+## Layout
+
 ```
-
-**Using short flags:**
-```bash
-./install.sh -d arch -p pacman
-```
-
-**Skip package installation (only install Oh My Zsh and plugins):**
-```bash
-./install.sh
-```
-
-### Tmux Installation
-
-Install Tmux and TPM (Tmux Plugin Manager):
-
-**Same flag system as Zsh:**
-```bash
-cd ~/.config/nvim/tmux
-./install.sh --distro arch --pkg-manager pacman
-./install.sh --distro ubuntu --pkg-manager apt
-./install.sh -d ubuntu -p homebrew
-```
-
-**Skip package installation:**
-```bash
-./install.sh
-```
-
-### Supported Distributions
-
-| Distribution | Default Package Manager | Alternatives |
-|--------------|------------------------|--------------|
-| Arch Linux   | `pacman`               | `yay`        |
-| Ubuntu       | `apt`                  | `homebrew`   |
-| Debian       | `apt`                  | `homebrew`   |
-| Fedora       | `dnf`                  | `homebrew`   |
-
-For more details on adding new distributions or customizing package management, see [lib/README.md](lib/README.md).
-
-## File Structure
-
-```
-~/.config/nvim/
-├── init.lua              # Entry point
-├── lua/
-│   ├── config/
-│   │   └── lazy.lua       # Plugin manager setup
-│   ├── core/
-│   │   ├── options.lua    # Neovim options
-│   │   ├── keymaps.lua    # Global keymaps
-│   │   └── autocmds.lua   # Auto commands
-│   └── plugins/           # Plugin configurations
-│       ├── colorscheme.lua
-│       ├── completion.lua
-│       ├── comment.lua
-│       ├── harpoon.lua
-│       ├── lsp.lua
-│       ├── metals.lua
-│       ├── oil.lua
-│       ├── telescope.lua
-│       └── ....
+.
+├── install.sh              # orchestrator
 ├── lib/
-│   ├── package-manager.sh # Multi-distro package management
-│   └── README.md          # Library documentation
+│   ├── common.sh           # repo root resolution, logging, symlinking
+│   ├── os.sh               # distro + Omarchy detection
+│   ├── package-manager.sh  # cross-distro package installation
+│   └── README.md
+├── nvim/                   # -> ~/.config/nvim
+│   ├── install.sh
+│   ├── init.lua
+│   ├── lua/{config,core,plugins}/
+│   ├── lsp/                # per-server LSP configs
+│   └── after/ftplugin/
+├── tmux/
+│   ├── install.sh
+│   ├── omarchy.sh          # Omarchy-only extras
+│   ├── .tmux.conf          # -> ~/.tmux.conf
+│   └── tmux.conf.tpl       # themed template
 ├── zsh/
-│   ├── install.sh         # Zsh installation script
-│   └── .zshrc            # Zsh configuration
-└── tmux/
-    ├── install.sh         # Tmux installation script
-    └── .tmux.conf        # Tmux configuration
-
+│   ├── install.sh
+│   ├── omarchy.sh
+│   ├── .zshrc              # -> ~/.zshrc
+│   └── zsh-colors.tpl      # themed template
+├── herdr/
+│   ├── install.sh
+│   └── config.toml         # -> ~/.config/herdr/config.toml
+└── omarchy/
+    ├── install.sh
+    ├── hypr/*.lua          # -> ~/.config/hypr/
+    └── hooks/theme-set.d/  # -> ~/.config/omarchy/hooks/theme-set.d/
 ```
 
-## Setup Instructions
+## Adding a module
 
-1. **Backup existing configuration** (if any):
-
-   ```bash
-   mv ~/.config/nvim ~/.config/nvim.backup
-   ```
-
-2. **Clone or copy this configuration** to `~/.config/nvim/`
-
-3. **Start Neovim**:
+1. `mkdir mymodule` and put the config in it.
+2. Write `mymodule/install.sh`:
 
    ```bash
-   nvim
+   #!/bin/bash
+   set -e
+   source "$(cd -P "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/lib/package-manager.sh"
+   module_init "${BASH_SOURCE[0]}"
+
+   parse_install_flags "$@"
+   install_packages "mymodule_essentials"   # optional, see lib/README.md
+
+   link mymodule/config "$HOME/.config/mymodule/config"
+   run_integration omarchy                  # optional
    ```
 
-4. **Wait for plugins to install** - lazy.nvim will automatically install all plugins on first launch
+3. Add it to `MODULE_ORDER` in the top-level `install.sh` (and to
+   `OMARCHY_ONLY` if it needs Omarchy).
 
-5. **Restart Neovim** to ensure everything loads properly
+## Supported distributions
 
-## Language Server Setup
+| Distribution | Default package manager | Alternatives |
+|--------------|------------------------|--------------|
+| Arch | `pacman` | `yay` |
+| Ubuntu | `apt` | `homebrew` |
+| Debian | `apt` | `homebrew` |
+| Fedora | `dnf` | `homebrew` |
+| RHEL | `dnf` | — |
+| macOS | `homebrew` | — |
 
-### TypeScript/JavaScript
-
-The `ts_ls` language server will be automatically installed when you first open a TS/JS file.
-You must install deno, which can be done via a package manager. i.e. `npm install -g deno`
-
-### Go
-
-There are multiple ways of installing go, which will automatically come with `gopls`
-See documentation for your preferred way https://go.dev/doc/install
-
-### Scala (Metals)
-
-Metals will prompt you to import your build when you first open a Scala project. Follow the prompts to set up your workspace.
-
-### Lua
-
-The `lua_ls` server is configured for Neovim configuration development with proper `vim` global recognition.
-
-## Customization
-
-This configuration is designed to be easily extensible. To add new plugins:
-
-1. Create a new file in `lua/plugins/`
-2. Return a plugin specification table
-3. Restart Neovim or run `:Lazy sync`
+Derivatives resolve through `ID`/`ID_LIKE` in `/etc/os-release`. See
+[lib/README.md](lib/README.md) for adding distributions or package groups.
