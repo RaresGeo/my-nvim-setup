@@ -1,29 +1,19 @@
 #!/bin/bash
-# Shared package management library for multi-distro dotfiles
-# Supports Arch (pacman, yay), Ubuntu (apt, homebrew), and future distros
+# Cross-distro package installation for the module install scripts.
+#
+# Logging and path helpers live in common.sh; this file only knows about
+# package managers and package groups.
 
-# Global variables set by parse_install_flags
+LIB_DIR="$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib/common.sh
+source "$LIB_DIR/common.sh"
+# shellcheck source=lib/os.sh
+source "$LIB_DIR/os.sh"
+
+# Set by parse_install_flags. DISTRO is auto-detected when not passed.
 DISTRO=""
 PKG_MANAGER=""
-
-# Color codes for logging
-COLOR_GREEN='\e[32m'
-COLOR_RED='\e[31m'
-COLOR_YELLOW='\e[33m'
-COLOR_RESET='\e[0m'
-
-# Logging functions
-log() {
-    echo -e "${COLOR_GREEN}$1${COLOR_RESET}"
-}
-
-error() {
-    echo -e "${COLOR_RED}ERROR: $1${COLOR_RESET}" >&2
-}
-
-warn() {
-    echo -e "${COLOR_YELLOW}WARNING: $1${COLOR_RESET}"
-}
+SKIP_PACKAGES=0
 
 # Package manager update commands
 declare -A PKG_MANAGER_UPDATE=(
@@ -57,17 +47,24 @@ declare -A DISTRO_DEFAULT_PKG_MANAGER=(
 declare -A PACKAGE_GROUPS=(
     [zsh_essentials]="zsh curl git"
     [tmux_essentials]="tmux git"
+    [nvim_essentials]="neovim git curl unzip ripgrep fd"
 )
 
 # Package name overrides for distros where names differ
 # Format: distro:generic_name=actual_name
 # Most packages have same names, so this starts minimal
 declare -A PACKAGE_OVERRIDES=(
-    # Example: if a distro uses different package names
-    # [fedora:somepackage]="different-package-name"
+    # Debian and Ubuntu ship fd under a different binary/package name because
+    # "fd" was already taken.
+    [ubuntu:fd]="fd-find"
+    [debian:fd]="fd-find"
 )
 
-# Parse installation flags
+# Parse installation flags.
+#
+# Distro and package manager are auto-detected from the host, so the common
+# case is passing nothing at all. The flags stay as an override for cross-distro
+# testing or for preferring yay over pacman.
 parse_install_flags() {
     while [[ $# -gt 0 ]]; do
         case $1 in
@@ -79,15 +76,35 @@ parse_install_flags() {
                 PKG_MANAGER="$2"
                 shift 2
                 ;;
+            --no-packages)
+                SKIP_PACKAGES=1
+                shift
+                ;;
             *)
-                # Unknown option - ignore or could warn
+                # Modules define their own extra flags; ignore what we do not own.
                 shift
                 ;;
         esac
     done
 
+    if (( SKIP_PACKAGES )); then
+        return 0
+    fi
+
+    # Auto-detect the distro when it was not given.
+    if [[ -z "$DISTRO" ]]; then
+        DISTRO="$(detect_os)"
+        if [[ -z "$DISTRO" ]]; then
+            warn "Could not detect this distro; package installation will be skipped."
+            warn "Pass --distro <distro> --pkg-manager <manager> to install packages anyway."
+            SKIP_PACKAGES=1
+            return 0
+        fi
+        log "Detected distro: $DISTRO"
+    fi
+
     # If distro specified but not package manager, use default
-    if [[ -n "$DISTRO" && -z "$PKG_MANAGER" ]]; then
+    if [[ -z "$PKG_MANAGER" ]]; then
         PKG_MANAGER=$(get_default_pkg_manager "$DISTRO")
         if [[ -z "$PKG_MANAGER" ]]; then
             error "Unknown distro: $DISTRO"
@@ -96,9 +113,6 @@ parse_install_flags() {
         fi
         log "Using default package manager for $DISTRO: $PKG_MANAGER"
     fi
-
-    # If package manager specified but not distro, that's okay
-    # We'll just use the package manager as-is
 
     return 0
 }
@@ -166,9 +180,13 @@ map_package_names() {
 install_packages() {
     local package_group="$1"
 
-    # Validate inputs
+    if (( SKIP_PACKAGES )); then
+        log "Skipping package installation (--no-packages)"
+        return 0
+    fi
+
     if [[ -z "$PKG_MANAGER" ]]; then
-        log "Skipping package installation (no package manager specified)"
+        log "Skipping package installation (no package manager available)"
         return 0
     fi
 
