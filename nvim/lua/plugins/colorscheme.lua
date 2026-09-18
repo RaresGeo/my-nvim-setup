@@ -25,7 +25,6 @@ local theme_plugins = {
 	{ "EdenEast/nightfox.nvim", lazy = true, priority = 1000 },
 	{ "ficcdaf/ashen.nvim", lazy = true, priority = 1000 },
 	{ "folke/tokyonight.nvim", lazy = true, priority = 1000 },
-	{ "gthelding/monokai-pro.nvim", lazy = true, priority = 1000 },
 	{ "kepano/flexoki-neovim", lazy = true, priority = 1000 },
 	{ "neanias/everforest-nvim", lazy = true, priority = 1000 },
 	{ "omacom-io/lumon.nvim", lazy = true, priority = 1000 },
