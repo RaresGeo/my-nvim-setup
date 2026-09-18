@@ -1,0 +1,49 @@
+# Alacritty on macOS, mirroring ~/.config/alacritty/alacritty.toml on the
+# Omarchy machines. The theme path is the same; on the Mac the macos module
+# links it to a static snapshot (macos/theme/).
+#
+# Homebrew no longer ships Alacritty (unsigned), so macos/build-alacritty.sh
+# builds it from source.
+
+general.import = [ "~/.local/state/omarchy/current/theme/alacritty.toml" ]
+
+[env]
+TERM = "xterm-256color"
+
+[font]
+normal = { family = "JetBrainsMono Nerd Font Mono" }
+bold = { family = "JetBrainsMono Nerd Font Mono" }
+italic = { family = "JetBrainsMono Nerd Font Mono" }
+# macOS points on a Retina panel; 11 is tiny here.
+size = 14
+
+[window]
+padding.x = 14
+padding.y = 14
+# A normal macOS title bar: drag to move, double-click or the green button to
+# fill the screen.
+decorations = "Full"
+# On a PC keyboard macOS maps Alt to Option; make it a real Alt/Meta in the
+# terminal so herdr's alt+... keys, zsh word motions and nvim <M-...> work as
+# on Linux. (Super arrives as Command: Cmd+C/V/N/T/W/Q are the Mac defaults.)
+option_as_alt = "Both"
+
+[terminal]
+osc52 = "CopyPaste"
+
+[keyboard]
+bindings = [
+  # Linux defaults, so the fingers do not have to learn Command versions.
+  # Ctrl+Shift+Space (vi mode) is already the default on every platform.
+  { key = "C", mods = "Control|Shift", action = "Copy" },
+  { key = "V", mods = "Control|Shift", action = "Paste" },
+  { key = "N", mods = "Control|Shift", action = "CreateNewWindow" },
+  { key = "F", mods = "Control|Shift", mode = "~Search", action = "SearchForward" },
+  { key = "B", mods = "Control|Shift", mode = "~Search", action = "SearchBackward" },
+
+  # Send Shift+Return as CSI-u so TUIs can distinguish it from Return.
+  { key = "Return", mods = "Shift", chars = "\u001B[13;2u" },
+
+  # Alt+Shift+Return in CSI-u so tmux/herdr can match M-S-Enter, as on Linux.
+  { key = "Return", mods = "Option|Shift", chars = "\u001B[13;4u" },
+]
