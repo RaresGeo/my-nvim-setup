@@ -1,6 +1,6 @@
 #!/bin/bash
-# Herdr module: wire up the herdr config. Herdr ships with Omarchy, so this
-# only links config -- it never installs the binary.
+# Herdr module: wire up the herdr config. Herdr ships with Omarchy; on macOS
+# it comes from Homebrew. Elsewhere this only links config.
 
 set -e
 
@@ -9,8 +9,12 @@ module_init "${BASH_SOURCE[0]}"
 
 parse_install_flags "$@"
 
+if ! command -v herdr &>/dev/null && is_macos; then
+    install_packages "herdr_essentials"
+fi
+
 if ! command -v herdr &>/dev/null; then
-    error "herdr not found. It ships with Omarchy; install it before running this."
+    error "herdr not found. It ships with Omarchy (or 'brew install herdr'); install it before running this."
     exit 1
 fi
 

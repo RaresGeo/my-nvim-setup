@@ -154,6 +154,7 @@ GOPATH=$(go env GOPATH 2>/dev/null)
 
 # Some things like Arch might not have homebrew
 [[ -f "/home/linuxbrew/.linuxbrew/bin/brew" ]] && eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"
+[[ -f "/opt/homebrew/bin/brew" ]] && eval "$(/opt/homebrew/bin/brew shellenv)"
 command -v mise &>/dev/null && eval "$(mise activate zsh)"
 command -v direnv &>/dev/null && eval "$(direnv hook zsh)"
 
@@ -217,6 +218,9 @@ if command -v fzf &> /dev/null; then
 
   if [[ -f /usr/share/fzf/key-bindings.zsh ]]; then
     source /usr/share/fzf/key-bindings.zsh
+  else
+    # Homebrew and upstream builds ship their bindings inside the binary
+    source <(fzf --zsh 2>/dev/null)
   fi
 fi
 
@@ -224,7 +228,11 @@ alias delete-branches='~/.my_scripts/delete_all_git_branches.sh'
 alias prs="gh pr list --author=\"@me\" --json number,title,url"
 alias ghurl="git remote -v | grep origin | grep fetch | awk '{print $2}' | sed 's/git@github.com:/https:\/\/github.com\//' | sed 's/.git$//g'"
 
-alias xcopy='xclip -sel clip'
+if [[ "$OSTYPE" == darwin* ]]; then
+  alias xcopy='pbcopy'
+else
+  alias xcopy='xclip -sel clip'
+fi
 
 alias wakehp='wakeonlan $(cat ~/.ssh/homelab_hp_mac)'
 alias sshhp='ssh daniel@$(cat ~/.ssh/homelab_hp_ip)'
