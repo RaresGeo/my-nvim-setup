@@ -1,0 +1,29 @@
+#!/bin/bash
+# Open a new window of whatever the default web browser is. Bound to
+# Cmd+Shift+B by karabiner/rules/launchers.json.
+
+app="$(osascript -l JavaScript -e 'ObjC.import("AppKit");
+$.NSWorkspace.sharedWorkspace.URLForApplicationToOpenURL($.NSURL.URLWithString("https://example.com")).path.js' 2>/dev/null)"
+
+case "$app" in
+    */Safari.app)
+        osascript -e 'tell application "Safari" to make new document' \
+                  -e 'tell application "Safari" to activate'
+        ;;
+    "")
+        open -a Safari
+        ;;
+    *)
+        # Gecko browsers (Firefox, Zen, LibreWolf, ...) refuse a second instance
+        # on the same profile; their own binary hands --new-window to the
+        # running one instead. They all ship application.ini.
+        if [[ -f "$app/Contents/Resources/application.ini" ]]; then
+            exe="$(defaults read "$app/Contents/Info" CFBundleExecutable)"
+            nohup "$app/Contents/MacOS/$exe" --new-window &>/dev/null &
+            exit 0
+        fi
+        # Chromium browsers (Chrome, Brave, Arc, Helium, ...): a second launch
+        # passes --new-window to the running instance.
+        open -na "$app" --args --new-window
+        ;;
+esac

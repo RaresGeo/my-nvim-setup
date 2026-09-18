@@ -1,0 +1,48 @@
+{
+  "title": "Launchers (dotfiles: karabiner/rules/launchers.json)",
+  "rules": [
+    {
+      "description": "Cmd+Enter: new Alacritty instance",
+      "manipulators": [
+        {
+          "type": "basic",
+          "from": {
+            "key_code": "return_or_enter",
+            "modifiers": {
+              "mandatory": [
+                "command"
+              ]
+            }
+          },
+          "to": [
+            {
+              "shell_command": "open -na Alacritty"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "description": "Cmd+Shift+B: new window of the default browser",
+      "manipulators": [
+        {
+          "type": "basic",
+          "from": {
+            "key_code": "b",
+            "modifiers": {
+              "mandatory": [
+                "command",
+                "shift"
+              ]
+            }
+          },
+          "to": [
+            {
+              "shell_command": "\"$HOME/.local/bin/open-browser\""
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
