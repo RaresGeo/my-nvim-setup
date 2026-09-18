@@ -26,6 +26,13 @@ automatically-unhide-macos-hidden-apps = true
 [key-mapping]
 preset = 'qwerty'
 
+# exec-and-forget starts with launchd's bare PATH, which lacks Homebrew (where
+# the aerospace CLI lives) and ~/.local/bin.
+[exec]
+inherit-env-vars = true
+[exec.env-vars]
+PATH = '/opt/homebrew/bin:${HOME}/.local/bin:${PATH}'
+
 # Hyprland's gaps_in = 3 applies per side, so 6 between two windows.
 [gaps]
 inner.horizontal = 6
@@ -46,12 +53,9 @@ alt-shift-j = 'move down'
 alt-shift-k = 'move up'
 alt-shift-l = 'move right'
 
-# AeroSpace closes a window by pressing its close button, which windows without
-# a title bar (Alacritty here) don't have. Quitting the app when it is down to
-# its last window avoids that, and matches Linux, where apps exit with their
-# last window. Each Cmd+Enter terminal is its own Alacritty instance, so every
-# terminal counts as a last window.
-alt-w = 'close --quit-if-last-window'
+# Close, quitting the app on its last window, and stay on this workspace
+# (see aerospace/bin/aerospace-close for why this needs a script).
+alt-w = 'exec-and-forget ~/.local/bin/aerospace-close'
 alt-f = 'fullscreen'
 alt-t = 'layout floating tiling'
 alt-slash = 'layout tiles horizontal vertical'

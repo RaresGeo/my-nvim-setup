@@ -160,7 +160,8 @@ left out, for the same reason.
 │   └── bin/open-browser    # -> ~/.local/bin/open-browser
 └── aerospace/
     ├── install.sh
-    └── aerospace.toml      # -> ~/.config/aerospace/aerospace.toml
+    ├── aerospace.toml      # -> ~/.config/aerospace/aerospace.toml
+    └── bin/                # -> ~/.local/bin/
 ```
 
 ## Adding a module
