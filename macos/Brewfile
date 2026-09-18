@@ -1,0 +1,18 @@
+# macOS base packages. Installed by macos/install.sh via `brew bundle`.
+
+# The installers in this repo need bash 4+; macOS ships 3.2.
+brew "bash"
+
+cask "font-jetbrains-mono-nerd-font"
+
+# Shell and editor (the zsh/tmux/nvim modules install their own essentials)
+brew "fzf"
+brew "zoxide"
+brew "eza"
+brew "bat"
+brew "btop"
+brew "lazydocker"
+brew "gh"
+brew "mise"
+brew "direnv"
+brew "herdr"

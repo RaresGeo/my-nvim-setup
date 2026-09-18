@@ -1,0 +1,32 @@
+# Omarchy auto-generated zsh colors for agnoster
+
+CURRENT_FG='#dcd7ba'
+CURRENT_DEFAULT_FG='#dcd7ba'
+
+# Directory segment
+AGNOSTER_DIR_BG='#7e9cd8'
+AGNOSTER_DIR_FG='#1f1f28'
+
+# Context (user@host)
+AGNOSTER_CONTEXT_BG='#363646'
+AGNOSTER_CONTEXT_FG='#dcd7ba'
+
+# Git
+AGNOSTER_GIT_CLEAN_BG='#76946a'
+AGNOSTER_GIT_CLEAN_FG='#1f1f28'
+AGNOSTER_GIT_DIRTY_BG='#c0a36e'
+AGNOSTER_GIT_DIRTY_FG='#dcd7ba'
+
+# Status
+AGNOSTER_STATUS_BG='#363646'
+AGNOSTER_STATUS_FG='#dcd7ba'
+AGNOSTER_STATUS_RETVAL_FG='#c34043'
+AGNOSTER_STATUS_ROOT_FG='#c0a36e'
+AGNOSTER_STATUS_JOB_FG='#6a9589'
+
+# Virtualenv
+AGNOSTER_VENV_BG='#7e9cd8'
+AGNOSTER_VENV_FG='#1f1f28'
+
+# Prompt end arrow color
+PROMPT_ARROW_COLOR='#dcd7ba'
