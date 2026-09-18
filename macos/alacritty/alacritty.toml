@@ -20,9 +20,8 @@ size = 14
 [window]
 padding.x = 14
 padding.y = 14
-# A normal macOS title bar: drag to move, double-click or the green button to
-# fill the screen.
-decorations = "Full"
+# No title bar: AeroSpace places and sizes the windows.
+decorations = "None"
 # On a PC keyboard macOS maps Alt to Option; make it a real Alt/Meta in the
 # terminal so herdr's alt+... keys, zsh word motions and nvim <M-...> work as
 # on Linux. (Super arrives as Command: Cmd+C/V/N/T/W/Q are the Mac defaults.)
