@@ -6,6 +6,8 @@ brew "bash"
 cask "font-jetbrains-mono-nerd-font"
 
 # Shell and editor (the zsh/tmux/nvim modules install their own essentials)
+# nvim-treesitter compiles its parsers with the tree-sitter CLI
+brew "tree-sitter-cli"
 brew "fzf"
 brew "zoxide"
 brew "eza"
