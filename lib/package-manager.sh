@@ -48,6 +48,7 @@ declare -A PACKAGE_GROUPS=(
     [zsh_essentials]="zsh curl git"
     [tmux_essentials]="tmux git"
     [nvim_essentials]="neovim git curl unzip ripgrep fd"
+    [herdr_essentials]="herdr"
 )
 
 # Package name overrides for distros where names differ
@@ -126,8 +127,12 @@ get_default_pkg_manager() {
 # Check if package manager is installed
 check_pkg_manager_installed() {
     local pkg_mgr="$1"
+    local binary="$pkg_mgr"
 
-    if ! command -v "$pkg_mgr" &> /dev/null; then
+    # The homebrew package manager is invoked as brew.
+    [[ "$pkg_mgr" == "homebrew" ]] && binary="brew"
+
+    if ! command -v "$binary" &> /dev/null; then
         error "Package manager '$pkg_mgr' is not installed"
 
         # Provide helpful installation instructions

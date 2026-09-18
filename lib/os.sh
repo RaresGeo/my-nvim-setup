@@ -46,6 +46,10 @@ detect_os() {
     esac
 }
 
+is_macos() {
+    [[ "$(uname -s)" == "Darwin" ]]
+}
+
 # True when this host is running Omarchy.
 is_omarchy() {
     [[ -d /usr/share/omarchy ]] && command -v omarchy &>/dev/null

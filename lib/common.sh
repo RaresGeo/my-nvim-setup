@@ -10,6 +10,17 @@
 [[ -n "${DOTFILES_COMMON_SOURCED:-}" ]] && return 0
 DOTFILES_COMMON_SOURCED=1
 
+# The package tables use associative arrays, which need bash 4. macOS still
+# ships 3.2 as /bin/bash, so hop over to Homebrew's bash when it is there.
+if (( BASH_VERSINFO[0] < 4 )); then
+    for _bash in /opt/homebrew/bin/bash /usr/local/bin/bash; do
+        [[ -x "$_bash" ]] && exec "$_bash" "$0" "$@"
+    done
+    echo "ERROR: bash 4+ is required (this is $BASH_VERSION)." >&2
+    echo "On macOS: install Homebrew, then 'brew install bash', then re-run." >&2
+    exit 1
+fi
+
 # Resolve the repo root through any symlinks in the path to this file.
 _common_source="${BASH_SOURCE[0]}"
 while [[ -L "$_common_source" ]]; do
