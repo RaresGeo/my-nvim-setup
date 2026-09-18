@@ -23,7 +23,7 @@ shortcuts on Command are untouched.
 | alt + 1–9 | Switch workspace |
 | alt + shift + 1–9 | Move the window to a workspace and follow it |
 | alt + tab / alt + shift + tab | Next / previous workspace |
-| alt + w | Close window |
+| alt + w | Close window (quits the app if it was its last window) |
 | alt + f | Fullscreen |
 | alt + t | Toggle floating |
 | alt + / | Toggle split direction |
