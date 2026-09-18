@@ -26,6 +26,9 @@ fi
 
 log "Linking aerospace.toml..."
 link aerospace/aerospace.toml "$HOME/.config/aerospace/aerospace.toml"
+for script in "$MODULE_DIR"/bin/*; do
+    link "aerospace/bin/$(basename "$script")" "$HOME/.local/bin/$(basename "$script")"
+done
 
 # AeroSpace hides windows on inactive workspaces by moving them off screen.
 # Grouping by app keeps Mission Control usable with that.

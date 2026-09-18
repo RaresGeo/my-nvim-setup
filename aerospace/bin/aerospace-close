@@ -1,0 +1,20 @@
+#!/bin/bash
+# alt+w: close the focused window and stay on this workspace.
+#
+# After a window closes, macOS hands focus to some other app and AeroSpace
+# follows it to that app's workspace (AeroSpace issues #854 and #1097; there is
+# no setting for it). Remember where we were and pull the view back once macOS
+# has settled.
+
+workspace="$(aerospace list-workspaces --focused)"
+
+# Quit instead of close on an app's last window: AeroSpace's close presses the
+# close button, which title-bar-less windows (Alacritty here) don't have.
+aerospace close --quit-if-last-window
+
+for delay in 0.15 0.35; do
+    sleep "$delay"
+    if [[ "$(aerospace list-workspaces --focused)" != "$workspace" ]]; then
+        aerospace workspace "$workspace"
+    fi
+done
