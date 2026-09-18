@@ -12,11 +12,12 @@ source "$DOTFILES_DIR/lib/os.sh"
 
 # Order matters: zsh and tmux register themed templates that the omarchy module
 # regenerates, so omarchy goes last.
-MODULE_ORDER=(zsh tmux nvim herdr omarchy)
+MODULE_ORDER=(zsh tmux nvim herdr macos karabiner aerospace omarchy)
 
-# Modules that only make sense on an Omarchy host. --all skips these elsewhere;
+# Modules that only make sense on one kind of host. --all skips these elsewhere;
 # naming one explicitly still runs it, and it will tell you why it cannot.
-OMARCHY_ONLY=(omarchy herdr)
+OMARCHY_ONLY=(omarchy)
+MACOS_ONLY=(macos karabiner aerospace)
 
 usage() {
     cat <<USAGE
@@ -26,7 +27,10 @@ Modules:
   zsh       oh-my-zsh, plugins, ~/.zshrc
   tmux      TPM, plugins, ~/.tmux.conf
   nvim      ~/.config/nvim and lazy.nvim plugins
-  herdr     ~/.config/herdr/config.toml            (Omarchy only)
+  herdr     ~/.config/herdr/config.toml            (Omarchy or macOS)
+  macos     Alacritty, CLI tools, system defaults  (macOS only)
+  karabiner key remaps and launcher shortcuts     (macOS only)
+  aerospace tiling window manager                (macOS only)
   omarchy   Hyprland overrides and theme hooks     (Omarchy only)
 
 Options:
@@ -48,12 +52,25 @@ Examples:
 USAGE
 }
 
-is_omarchy_only() {
+in_list() {
     local module="$1" candidate
-    for candidate in "${OMARCHY_ONLY[@]}"; do
+    shift
+    for candidate in "$@"; do
         [[ "$candidate" == "$module" ]] && return 0
     done
     return 1
+}
+
+# Why a module does not apply to this host, or nothing when it does.
+skip_reason() {
+    local module="$1"
+    if in_list "$module" "${OMARCHY_ONLY[@]}" && ! is_omarchy; then
+        echo "needs Omarchy"
+    elif in_list "$module" "${MACOS_ONLY[@]}" && ! is_macos; then
+        echo "needs macOS"
+    elif [[ "$module" == "herdr" ]] && ! is_omarchy && ! is_macos; then
+        echo "needs Omarchy or macOS"
+    fi
 }
 
 module_exists() {
@@ -61,11 +78,12 @@ module_exists() {
 }
 
 list_modules() {
-    local module
+    local module reason
     for module in "${MODULE_ORDER[@]}"; do
         module_exists "$module" || continue
-        if is_omarchy_only "$module" && ! is_omarchy; then
-            echo "  $module (skipped: needs Omarchy)"
+        reason="$(skip_reason "$module")"
+        if [[ -n "$reason" ]]; then
+            echo "  $module (skipped: $reason)"
         else
             echo "  $module"
         fi
@@ -116,11 +134,12 @@ main() {
             error "--all cannot be combined with named modules."
             exit 1
         fi
-        local module
+        local module reason
         for module in "${MODULE_ORDER[@]}"; do
             module_exists "$module" || continue
-            if is_omarchy_only "$module" && ! is_omarchy; then
-                warn "Skipping $module (needs Omarchy)."
+            reason="$(skip_reason "$module")"
+            if [[ -n "$reason" ]]; then
+                warn "Skipping $module ($reason)."
                 continue
             fi
             requested+=("$module")

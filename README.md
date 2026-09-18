@@ -1,6 +1,7 @@
 # Dotfiles
 
-Neovim, tmux, zsh, herdr and Hyprland configuration, installed by symlink.
+Neovim, tmux, zsh, herdr and Hyprland configuration, plus a macOS base layer,
+installed by symlink.
 
 This started life as just a neovim config and grew, so it is now organised as a
 set of independent modules. Each module owns a directory with its config and an
@@ -55,13 +56,16 @@ mv ~/.config/nvim ~/.config/dotfiles
 
 ## Modules
 
-| Module | Installs | Requires Omarchy |
-|--------|----------|------------------|
-| [`nvim`](nvim/README.md) | `~/.config/nvim`, lazy.nvim plugins | no |
-| `tmux` | `~/.tmux.conf`, TPM and plugins | no |
-| `zsh` | `~/.zshrc`, oh-my-zsh and plugins | no |
-| `herdr` | `~/.config/herdr/config.toml` | yes (ships with it) |
-| `omarchy` | Hyprland overrides, theme hooks | yes |
+| Module | Installs | Host |
+|--------|----------|------|
+| [`nvim`](nvim/README.md) | `~/.config/nvim`, lazy.nvim plugins | any |
+| `tmux` | `~/.tmux.conf`, TPM and plugins | any |
+| `zsh` | `~/.zshrc`, oh-my-zsh and plugins | any |
+| `herdr` | `~/.config/herdr/config.toml` | Omarchy (ships with it) or macOS (Homebrew) |
+| `omarchy` | Hyprland overrides, theme hooks | Omarchy |
+| [`macos`](macos/README.md) | Alacritty, theme snapshot, CLI tools, system defaults | macOS |
+| [`karabiner`](karabiner/README.md) | Built-in keyboard remap, Cmd+Enter / Cmd+Shift+B launchers | macOS |
+| [`aerospace`](aerospace/README.md) | Tiling window manager, minimal config | macOS |
 
 ## Omarchy
 
@@ -139,10 +143,24 @@ left out, for the same reason.
 ├── herdr/
 │   ├── install.sh
 │   └── config.toml         # -> ~/.config/herdr/config.toml
-└── omarchy/
+├── omarchy/
+│   ├── install.sh
+│   ├── hypr/*.lua          # -> ~/.config/hypr/
+│   └── hooks/theme-set.d/  # -> ~/.config/omarchy/hooks/theme-set.d/
+├── macos/
+│   ├── install.sh
+│   ├── Brewfile
+│   ├── alacritty/          # -> ~/.config/alacritty/
+│   ├── theme/kanagawa/     # -> ~/.local/state/omarchy/current/theme
+│   └── defaults.sh, build-alacritty.sh, doctor.sh
+├── karabiner/
+│   ├── install.sh          # merges into ~/.config/karabiner/karabiner.json
+│   ├── builtin-keyboard.json
+│   ├── rules/*.json        # -> ~/.config/karabiner/assets/complex_modifications/
+│   └── bin/open-browser    # -> ~/.local/bin/open-browser
+└── aerospace/
     ├── install.sh
-    ├── hypr/*.lua          # -> ~/.config/hypr/
-    └── hooks/theme-set.d/  # -> ~/.config/omarchy/hooks/theme-set.d/
+    └── aerospace.toml      # -> ~/.config/aerospace/aerospace.toml
 ```
 
 ## Adding a module
@@ -164,7 +182,7 @@ left out, for the same reason.
    ```
 
 3. Add it to `MODULE_ORDER` in the top-level `install.sh` (and to
-   `OMARCHY_ONLY` if it needs Omarchy).
+   `OMARCHY_ONLY` or `MACOS_ONLY` if it only applies to one host).
 
 ## Supported distributions
 
@@ -176,6 +194,9 @@ left out, for the same reason.
 | Fedora | `dnf` | `homebrew` |
 | RHEL | `dnf` | — |
 | macOS | `homebrew` | — |
+
+On macOS, install `bash` from Homebrew first: the installers need bash 4+, and
+`lib/common.sh` re-executes under Homebrew's bash when `/bin/bash` is 3.2.
 
 Derivatives resolve through `ID`/`ID_LIKE` in `/etc/os-release`. See
 [lib/README.md](lib/README.md) for adding distributions or package groups.
