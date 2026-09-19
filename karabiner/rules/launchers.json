@@ -2,7 +2,7 @@
   "title": "Launchers (dotfiles: karabiner/rules/launchers.json)",
   "rules": [
     {
-      "description": "Cmd+Enter: new Alacritty instance",
+      "description": "Option+Enter: new Alacritty instance",
       "manipulators": [
         {
           "type": "basic",
@@ -10,13 +10,37 @@
             "key_code": "return_or_enter",
             "modifiers": {
               "mandatory": [
-                "command"
-              ]
+                "option"
+              ],
+              "optional": []
             }
           },
           "to": [
             {
               "shell_command": "open -na Alacritty"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "description": "Option+Cmd+Enter: new Alacritty instance running tmux",
+      "manipulators": [
+        {
+          "type": "basic",
+          "from": {
+            "key_code": "return_or_enter",
+            "modifiers": {
+              "mandatory": [
+                "option",
+                "command"
+              ],
+              "optional": []
+            }
+          },
+          "to": [
+            {
+              "shell_command": "open -na Alacritty --args -e tmux"
             }
           ]
         }
@@ -33,7 +57,8 @@
               "mandatory": [
                 "command",
                 "shift"
-              ]
+              ],
+              "optional": []
             }
           },
           "to": [
