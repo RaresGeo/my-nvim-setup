@@ -40,7 +40,7 @@
           },
           "to": [
             {
-              "shell_command": "open -na Alacritty --args -e tmux"
+              "shell_command": "open -na Alacritty --args -e /opt/homebrew/bin/tmux"
             }
           ]
         }
