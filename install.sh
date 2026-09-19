@@ -12,12 +12,12 @@ source "$DOTFILES_DIR/lib/os.sh"
 
 # Order matters: zsh and tmux register themed templates that the omarchy module
 # regenerates, so omarchy goes last.
-MODULE_ORDER=(zsh tmux nvim herdr macos karabiner aerospace omarchy)
+MODULE_ORDER=(zsh tmux nvim herdr macos karabiner omniwm omarchy)
 
 # Modules that only make sense on one kind of host. --all skips these elsewhere;
 # naming one explicitly still runs it, and it will tell you why it cannot.
 OMARCHY_ONLY=(omarchy)
-MACOS_ONLY=(macos karabiner aerospace)
+MACOS_ONLY=(macos karabiner omniwm)
 
 usage() {
     cat <<USAGE
@@ -30,7 +30,7 @@ Modules:
   herdr     ~/.config/herdr/config.toml            (Omarchy or macOS)
   macos     Alacritty, CLI tools, system defaults  (macOS only)
   karabiner key remaps and launcher shortcuts     (macOS only)
-  aerospace tiling window manager                (macOS only)
+  omniwm    tiling window manager                (macOS only)
   omarchy   Hyprland overrides and theme hooks     (Omarchy only)
 
 Options:

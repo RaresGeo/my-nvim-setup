@@ -6,7 +6,7 @@
 #   - a static snapshot of the Omarchy theme, which nvim, zsh and Alacritty read
 #   - a few system defaults (defaults.sh)
 #
-# Key remaps and window management are separate modules: karabiner, aerospace.
+# Key remaps and window management are separate modules: karabiner, omniwm.
 #
 # Flags:
 #   --no-packages      skip `brew bundle`
