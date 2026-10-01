@@ -19,6 +19,7 @@ offers to add it the first time Option+, is pressed.
 | `rules/launchers.json` | **Option+Enter**: a new Alacritty instance. **Option+Cmd+Enter**: one running tmux. **Option+Shift+B**: a new window of the default browser. |
 | `rules/alacritty-close.json` | **Option+W** in Alacritty sends Cmd+W, so the window closes through Alacritty's own handling; it has no title bar for a window manager to press. |
 | `rules/notifications.json` | **Option+,**: dismisses the newest notification banner. |
+| `rules/omniwm.json` | **Option+0** focuses OmniWM workspace 10, **Option+Shift+0** moves the window there and follows it. OmniWM's own hotkeys only go up to nine workspaces, so these call `omniwmctl`. |
 | `bin/dismiss-notification` | Presses the banner's own close action through NotificationCenter's accessibility tree; macOS has no API for it. |
 | `bin/open-browser` | Works out the default browser and opens a new window the way that browser needs (Chromium, Firefox-based, Safari) |
 
@@ -40,3 +41,12 @@ goes back to toggling the browser's own bookmarks bar.
 Karabiner intercepts at the HID level, so a combo it claims never reaches
 OmniWM. The two these launchers take, Option+Shift+B and Option+, are therefore
 left unassigned in `omniwm/settings.toml` rather than bound on both sides.
+
+`rules/omniwm.json` goes the other way and drives OmniWM through its CLI.
+OmniWM writes its whole hotkey roster into `settings.toml`, and that roster
+stops at `switchWorkspace.8` — nine workspaces — so a tenth workspace cannot be
+reached from OmniWM's own hotkeys at all. `omniwmctl` has no such limit, and
+`switch-workspace anywhere` crosses monitors, which this needs: workspace 10
+lives on the built-in display while 1–9 sit on the desk monitor. The path to
+`omniwmctl` is absolute because Karabiner runs commands with launchd's bare
+PATH, which has no Homebrew.

@@ -1,0 +1,50 @@
+{
+  "title": "OmniWM shims (dotfiles: karabiner/rules/omniwm.json)",
+  "rules": [
+    {
+      "description": "Option+0: focus OmniWM workspace 10",
+      "manipulators": [
+        {
+          "type": "basic",
+          "from": {
+            "key_code": "0",
+            "modifiers": {
+              "mandatory": [
+                "option"
+              ],
+              "optional": []
+            }
+          },
+          "to": [
+            {
+              "shell_command": "/opt/homebrew/bin/omniwmctl command switch-workspace anywhere 10"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "description": "Option+Shift+0: move the window to OmniWM workspace 10 and follow it",
+      "manipulators": [
+        {
+          "type": "basic",
+          "from": {
+            "key_code": "0",
+            "modifiers": {
+              "mandatory": [
+                "option",
+                "shift"
+              ],
+              "optional": []
+            }
+          },
+          "to": [
+            {
+              "shell_command": "/opt/homebrew/bin/omniwmctl command move-to-workspace 10"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
