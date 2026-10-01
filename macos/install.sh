@@ -12,6 +12,7 @@
 #   --no-packages      skip `brew bundle`
 #   --no-defaults      skip defaults.sh
 #   --with-alacritty   build Alacritty from source (build-alacritty.sh)
+#   --no-dock-agent    skip the launchd dock watcher (dockctl still installed)
 
 set -e
 
@@ -41,6 +42,29 @@ link macos/alacritty/alacritty.toml "$HOME/.config/alacritty/alacritty.toml"
 # There is no Omarchy here to populate it, so point it at a checked-in snapshot.
 log "Linking theme snapshot..."
 link macos/theme/kanagawa "$HOME/.local/state/omarchy/current/theme"
+
+# Docked/undocked state: the desk keyboard appearing or vanishing drives the
+# Alacritty font size and Zen's scale. dockctl owns ~/.config/alacritty/dock.toml,
+# which alacritty.toml imports -- so run it once here or Alacritty falls back to
+# its built-in size until the first dock change.
+log "Installing dockctl..."
+link macos/dock/dockctl "$HOME/.local/bin/dockctl"
+"$HOME/.local/bin/dockctl" apply --force
+
+if [[ " $* " == *" --no-dock-agent "* ]]; then
+    log "Skipping dock watcher (--no-dock-agent)."
+else
+    log "Installing dock watcher agent..."
+    mkdir -p "$HOME/.local/state/dock" "$HOME/Library/LaunchAgents"
+    agent="$HOME/Library/LaunchAgents/com.dotfiles.dock-watch.plist"
+    sed -e "s|{{ DOCKCTL }}|$HOME/.local/bin/dockctl|g" \
+        -e "s|{{ LOGDIR }}|$HOME/.local/state/dock|g" \
+        "$MODULE_DIR/dock/com.dotfiles.dock-watch.plist.tpl" > "$agent"
+    # bootout first so a re-run picks up a changed plist instead of being a no-op.
+    launchctl bootout "gui/$UID/com.dotfiles.dock-watch" 2>/dev/null || true
+    launchctl bootstrap "gui/$UID" "$agent"
+    log "  dock watcher loaded (polls every 5s)"
+fi
 
 if [[ " $* " == *" --with-alacritty "* ]]; then
     "$MODULE_DIR/build-alacritty.sh"

@@ -5,7 +5,13 @@
 # Homebrew no longer ships Alacritty (unsigned), so macos/build-alacritty.sh
 # builds it from source.
 
-general.import = [ "~/.local/state/omarchy/current/theme/alacritty.toml" ]
+general.import = [
+  "~/.local/state/omarchy/current/theme/alacritty.toml",
+  # Font size by dock state, written by macos/dock/dockctl. It has to live
+  # in an import rather than below: Alacritty loads the importing file LAST,
+  # so a `size` in this file would always beat the overlay.
+  "~/.config/alacritty/dock.toml",
+]
 
 [env]
 TERM = "xterm-256color"
@@ -14,8 +20,8 @@ TERM = "xterm-256color"
 normal = { family = "JetBrainsMono Nerd Font Mono" }
 bold = { family = "JetBrainsMono Nerd Font Mono" }
 italic = { family = "JetBrainsMono Nerd Font Mono" }
-# macOS points on a Retina panel; 11 is tiny here.
-size = 14
+# size is NOT set here on purpose -- see the dock.toml import above. Docked it
+# is 18 (14 * 1.25, for the 109 PPI ultrawide at native 1x); undocked 14.
 
 [window]
 padding.x = 14
