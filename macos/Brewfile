@@ -18,8 +18,3 @@ brew "gh"
 brew "mise"
 brew "direnv"
 brew "herdr"
-
-# DDC/CI control for the desk monitor: macos/dock/dockctl hands the ultrawide
-# back to the other machine on undock. USB-C/DisplayPort only -- displays on the
-# built-in HDMI port of M1/entry-M2 Macs are not supported by m1ddc.
-brew "m1ddc"

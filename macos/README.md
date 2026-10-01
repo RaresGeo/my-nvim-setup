@@ -37,13 +37,17 @@ so the moment the switch hands it to the other machine it leaves this Mac's USB
 tree — which is exactly the moment this stopped being the docked machine. No
 display probing, and it is settled before the monitor has made up its mind.
 
-A state change applies three things:
+A state change applies the Alacritty font size: 18 docked, 14 undocked, through
+the generated `~/.config/alacritty/dock.toml` that `alacritty.toml` imports. The
+ultrawide is 109 PPI at native 1x, so the app has to carry the readability
+itself.
+
+Two things this deliberately does **not** do, both decided by measuring:
 
 | | |
 |---|---|
-| Alacritty font size | 18 docked, 14 undocked, through the generated `~/.config/alacritty/dock.toml` that `alacritty.toml` imports. The ultrawide is 109 PPI at native 1x, so the app has to carry the readability itself. |
-| Zen's Gecko scale | `layout.css.devPixelsPerPx` in the profile's `user.js`; `-1.0` undocked follows macOS, `1.25` docked. Applies on Zen's next launch. |
-| The ultrawide's input | On undock only: hands the monitor to the other machine over DDC/CI via `m1ddc`. One-way on purpose — the other machine switches it back itself, so we only ever talk to the monitor while this Mac still owns the cable. |
+| Zen's Gecko scale | `layout.css.devPixelsPerPx` at `-1.0` ("follow macOS") is already correct in both states — 2.0 on the built-in XDR, 1.0 on the Dell at native 1x. There is no per-state value to pick. An earlier version set 1.25 when docked, treating the pref as a readability boost; it *replaces* the backing scale instead of multiplying it, so it rendered Zen at 62.5% on the laptop. The pref is left static in `user.js`. |
+| The ultrawide's input | This Mac cannot speak DDC to the Dell at all — every read fails at the I2C level, because the link is USB-C (DP Alt Mode) to HDMI and that active conversion does not carry the DDC sideband. The desktop can, in both directions, so it owns the handover from its side. For the record, the panel's VCP `0x60` values are dp1=`0x0f`, hdmi1=`0x11`, hdmi2=`0x12`; this Mac is on HDMI-1. |
 
 ```bash
 dockctl status      # detected state, and what is currently applied
@@ -53,10 +57,10 @@ dockctl dock        # force a state, ignoring the hardware
 dockctl undock
 ```
 
-The keyboard's USB ids, both font sizes, both scales and the monitor input are
-environment variables at the top of `dockctl`; `dockctl probe` prints the ids to
-put there. The agent polls rather than waiting on an event because launchd has
-no USB trigger, and `apply` is a ~17ms no-op when nothing changed.
+The keyboard's USB ids and both font sizes are environment variables at the top
+of `dockctl`; `dockctl probe` prints the ids to put there. The agent polls
+rather than waiting on an event because launchd has no USB trigger, and `apply`
+is a ~17ms no-op when nothing changed.
 
 ## Terminal keys
 
