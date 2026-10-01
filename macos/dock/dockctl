@@ -7,7 +7,8 @@
 # needed, and it works before/after the monitor has made up its mind.
 #
 # What a state change applies:
-#   1. Alacritty font size   (via a generated import -- see font_apply)
+#   1. Alacritty font size      (via a generated import -- see font_apply)
+#   2. OmniWM workspace placement (so nothing is stranded on an invisible panel)
 #
 # Usage:
 #   dockctl status          print the detected state and what is currently set
@@ -37,6 +38,13 @@ FONT_SIZE_UNDOCKED="${FONT_SIZE_UNDOCKED:-14}"
 ALACRITTY_OVERLAY="${ALACRITTY_OVERLAY:-$HOME/.config/alacritty/dock.toml}"
 ALACRITTY_CONFIG="${ALACRITTY_CONFIG:-$HOME/.config/alacritty/alacritty.toml}"
 
+# Undocking does not unplug the Dell -- the cable stays, only its input changes --
+# so macOS keeps it as a live display and anything parked there becomes invisible
+# rather than gone. Haul those workspaces onto the built-in panel on the way out
+# and put them back on the way in. Set to 0 to leave workspaces alone.
+DOCK_MOVE_WORKSPACES="${DOCK_MOVE_WORKSPACES:-1}"
+# Substring identifying the built-in panel in OmniWM's display names.
+WS_INTERNAL_MATCH="${WS_INTERNAL_MATCH:-Built-in}"
 STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/dock"
 STATE_FILE="$STATE_DIR/state"
 
@@ -87,7 +95,7 @@ EOF
     note "alacritty font size -> $size  ($ALACRITTY_OVERLAY)"
 }
 
-# --- Zen: deliberately NOT managed -------------------------------------------
+# --- 2. Zen: deliberately NOT managed ----------------------------------------
 # Removed after measuring it. layout.css.devPixelsPerPx at -1.0 ("follow macOS")
 # is correct in BOTH states: 2.0 on the built-in XDR, and 1.0 on the Dell, which
 # runs at native 1x. There is no per-state value to choose, so there is nothing
@@ -96,7 +104,103 @@ EOF
 # boost, but it REPLACES the macOS backing scale instead of multiplying it, which
 # is what made Zen render at 62.5% on the laptop.
 
-# --- Monitor input: deliberately NOT done here --------------------------------
+# --- 2. OmniWM workspace placement -------------------------------------------
+# Same PATH trap as everything else launchd runs: resolve the binary rather than
+# trusting $PATH, which has no Homebrew in it.
+find_omniwmctl() {
+    local c
+    for c in "${DOCK_OMNIWMCTL:-}" /opt/homebrew/bin/omniwmctl \
+             /Applications/OmniWM.app/Contents/MacOS/omniwmctl; do
+        if [[ -n "$c" && -x "$c" ]]; then printf '%s\n' "$c"; return 0; fi
+    done
+    command -v omniwmctl 2>/dev/null || return 1
+}
+
+# "<number>\t<display name>" per workspace.
+ws_map() {
+    "$1" query workspaces --format json 2>/dev/null | /usr/bin/python3 -c '
+import json,sys
+try: d=json.load(sys.stdin)
+except Exception: sys.exit(0)
+for w in d.get("result",{}).get("payload",{}).get("workspaces",[]):
+    print("%s\t%s" % (w.get("number"), (w.get("display") or {}).get("name","")))
+'
+}
+
+ws_display_of() { ws_map "$1" | awk -F'\t' -v n="$2" '$1==n {print $2; exit}'; }
+
+# move-to-monitor takes a DIRECTION, not a display, and OmniWM's idea of which
+# way a panel lies does not follow the frame geometry (the built-in sits below the
+# Dell in coordinates, yet answers to "left"). So discover the direction once by
+# trying and checking, then reuse it. --force is required because settings.toml
+# pins every workspace to a specificDisplay, which is otherwise a hard conflict.
+ws_dir=""
+ws_move_one() {
+    local ctl="$1" ws="$2" want="$3" dir out
+    for dir in $ws_dir left right up down; do
+        out="$("$ctl" workspace move-to-monitor "$ws" "$dir" --force 2>&1)" || true
+        case "$out" in
+            *workspace_state_conflict*)
+                # A natively-fullscreened window is tied to its own macOS Space on
+                # one display. No direction moves it, so stop trying this workspace.
+                return 2 ;;
+        esac
+        if [[ "$(ws_display_of "$ctl" "$ws")" == *"$want"* ]]; then
+            ws_dir="$dir"
+            return 0
+        fi
+    done
+    return 1
+}
+
+workspaces_apply() {
+    local state="$1" ctl want src ws name rc moved="" stuck="" failed=""
+    (( DOCK_MOVE_WORKSPACES )) || return 0
+    if ! ctl="$(find_omniwmctl)"; then
+        note "workspaces: omniwmctl not found, skipped"
+        return 0
+    fi
+    "$ctl" ping >/dev/null 2>&1 || { note "workspaces: OmniWM not responding, skipped"; return 0; }
+
+    if [[ "$state" == "undocked" ]]; then
+        # Everything not already on the built-in goes there.
+        want="$WS_INTERNAL_MATCH"
+        while IFS=$'\t' read -r ws name; do
+            [[ -n "$ws" ]] || continue
+            [[ "$name" == *"$want"* ]] && continue
+            rc=0; ws_move_one "$ctl" "$ws" "$want" || rc=$?
+            case "$rc" in
+                0) moved="$moved $ws" ;;
+                2) stuck="$stuck $ws" ;;
+                *) failed="$failed $ws" ;;
+            esac
+        done < <(ws_map "$ctl")
+        if [[ -n "$moved" ]]; then printf '%s\n' "${moved# }" > "$STATE_DIR/moved-workspaces"; fi
+    else
+        # Put back exactly what we moved, so a workspace that always lived on the
+        # built-in is not dragged onto the Dell by accident.
+        [[ -f "$STATE_DIR/moved-workspaces" ]] || { note "workspaces: nothing recorded to restore"; return 0; }
+        src="$(ws_map "$ctl" | awk -F'\t' -v b="$WS_INTERNAL_MATCH" 'index($2,b)==0 {print $2; exit}')"
+        if [[ -z "$src" ]]; then note "workspaces: no external display present, skipped"; return 0; fi
+        for ws in $(cat "$STATE_DIR/moved-workspaces"); do
+            rc=0; ws_move_one "$ctl" "$ws" "$src" || rc=$?
+            case "$rc" in
+                0) moved="$moved $ws" ;;
+                2) stuck="$stuck $ws" ;;
+                *) failed="$failed $ws" ;;
+            esac
+        done
+        rm -f "$STATE_DIR/moved-workspaces"
+    fi
+
+    [[ -n "$moved" ]]  && note "workspaces moved:${moved}"
+    [[ -n "$stuck" ]]  && note "workspaces left put (native fullscreen):${stuck}"
+    [[ -n "$failed" ]] && note "workspaces could not move:${failed}"
+    [[ -z "$moved$stuck$failed" ]] && note "workspaces: nothing to move"
+    return 0
+}
+
+# --- 3. Monitor input: deliberately NOT done here -----------------------------
 # Moved to the desktop. Two reasons, both measured:
 #
 #   * This Mac cannot speak DDC to the Dell at all. Every read fails with
@@ -121,6 +225,7 @@ apply_state() {
         *) say "unknown state: $state" >&2; return 1 ;;
     esac
     mkdir -p "$STATE_DIR"
+    workspaces_apply "$state"
     printf '%s\n' "$state" > "$STATE_FILE"
 }
 
