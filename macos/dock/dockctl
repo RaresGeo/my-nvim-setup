@@ -35,6 +35,7 @@ FONT_SIZE_UNDOCKED="${FONT_SIZE_UNDOCKED:-14}"
 
 
 ALACRITTY_OVERLAY="${ALACRITTY_OVERLAY:-$HOME/.config/alacritty/dock.toml}"
+ALACRITTY_CONFIG="${ALACRITTY_CONFIG:-$HOME/.config/alacritty/alacritty.toml}"
 
 STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/dock"
 STATE_FILE="$STATE_DIR/state"
@@ -73,6 +74,16 @@ font_apply() {
 [font]
 size = $size
 EOF
+    # Nudge the running Alacritty, or the new size sits on disk unused. Its
+    # watcher reloads only when an event path is already in the config's `paths`
+    # list, and that list is captured when the config is LOADED -- so an instance
+    # started before dock.toml joined the imports ignores writes to it outright.
+    # The main config is always in that list. `touch -h` bumps the symlink itself
+    # rather than the repo file it points at, whose directory is not watched at
+    # all, which is why editing the repo copy never reloads anything.
+    if [[ -L "$ALACRITTY_CONFIG" || -f "$ALACRITTY_CONFIG" ]]; then
+        touch -h "$ALACRITTY_CONFIG" 2>/dev/null || true
+    fi
     note "alacritty font size -> $size  ($ALACRITTY_OVERLAY)"
 }
 
