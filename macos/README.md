@@ -76,9 +76,10 @@ so it is discovered by trying and cached per target.
 OmniWM refuses to move a workspace that is currently *shown* on its panel and
 has windows on it — an empty one moves while visible, and the same workspace
 moves once something else is shown in its place. So on that refusal `dockctl`
-switches the panel to another workspace and retries. If the stuck one is the
-only workspace on that panel there is nothing to swap in, and it is reported and
-left alone.
+shows another workspace on that panel and retries. If it is the only workspace
+there, an empty one is borrowed from elsewhere to take its place and a second
+sweep sends the borrowed one home; empty workspaces are the safe thing to
+borrow, since being empty they can be moved even while shown.
 
 Two things this deliberately does **not** do, both decided by measuring:
 
