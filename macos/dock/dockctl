@@ -228,7 +228,7 @@ ws_wants_internal() {
 # memory at all, so it is idempotent and self-correcting: a run that is already
 # right does nothing, and a run after something drifted puts it back.
 workspaces_apply() {
-    local state="$1" ctl ext ws name want rc moved="" stuck="" failed=""
+    local state="$1" quiet="${2:-}" ctl ext ws name want rc moved="" stuck="" failed=""
     (( DOCK_MOVE_WORKSPACES )) || return 0
     if ! ctl="$(find_omniwmctl)"; then
         note "workspaces: omniwmctl not found, skipped"
@@ -267,7 +267,7 @@ workspaces_apply() {
     [[ -n "$moved" ]]  && note "workspaces moved:${moved}"
     [[ -n "$stuck" ]]  && note "workspaces left put (shown, with windows, nothing to swap in):${stuck}"
     [[ -n "$failed" ]] && note "workspaces could not move:${failed}"
-    [[ -z "$moved$stuck$failed" ]] && note "workspaces: already placed"
+    [[ -z "$moved$stuck$failed" && -z "$quiet" ]] && note "workspaces: already placed"
     return 0
 }
 
@@ -321,6 +321,15 @@ case "$cmd" in
         last_sig="$( [[ -f "$STATE_DIR/displays" ]] && cat "$STATE_DIR/displays" || true )"
         if [[ "${2:-}" == "--force" || "$detected" != "$last" || "$sig" != "$last_sig" ]]; then
             apply_state "$detected"
+        else
+            # Placement drifts without either signal moving: OmniWM re-places
+            # workspaces on whatever is "main" of its own accord, and merely
+            # reloading settings.toml is enough to trigger it. Observed putting
+            # every workspace on the Dell while undocked, which is the state all
+            # of this exists to prevent. The reconcile is idempotent and costs
+            # one query when nothing is wrong, so just run it every poll; it is
+            # quiet unless it actually moves something.
+            workspaces_apply "$detected" quiet
         fi
         ;;
     dock)   apply_state docked ;;

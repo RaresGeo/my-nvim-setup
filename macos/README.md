@@ -55,11 +55,17 @@ compares the live placement against that and moves only what is wrong, so it is
 idempotent and self-correcting — a run that is already right does nothing, and a
 run after something drifted puts it back. There is no record file to go stale.
 
-Placement is reconciled when the set of attached displays changes as well as
-when the dock state does. Plugging the Dell in while the keyboard is already
-attached is not a dock-state change, and with nothing pinned, OmniWM would put
-the workspaces on whatever is `main`; `dockctl status` prints the signature it
-compares against.
+Placement is reconciled on every poll, not only when the dock state or the set
+of attached displays changes. OmniWM re-places workspaces onto whatever is
+`main` of its own accord — reloading `settings.toml` is enough to set it off —
+and neither of those signals moves when it does. Because the reconcile compares
+against the wanted layout it costs one query when nothing is wrong, and it stays
+quiet in the log unless it actually moves something. `dockctl status` prints the
+display signature.
+
+The flip side: moving a workspace to another display by hand gets undone within
+five seconds. That is what owning placement means — set `DOCK_MOVE_WORKSPACES=0`
+if you want to place things yourself.
 
 `DOCK_MOVE_WORKSPACES=0` turns it off; `WS_INTERNAL_MATCH` is the substring that
 identifies the built-in panel in OmniWM's display names. One wrinkle:
