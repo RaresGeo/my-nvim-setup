@@ -116,6 +116,23 @@ find_omniwmctl() {
     command -v omniwmctl 2>/dev/null || return 1
 }
 
+# The external panel's name, from OmniWM's DISPLAY list. It cannot come from the
+# workspace list: after a successful undock move every workspace sits on the
+# built-in, so there is nothing left pointing at the Dell to read its name from
+# and the restore could never run.
+external_display() {
+    "$1" query displays --format json 2>/dev/null | /usr/bin/python3 -c '
+import json,sys
+try: d=json.load(sys.stdin)
+except Exception: sys.exit(0)
+m=sys.argv[1]
+for disp in d.get("result",{}).get("payload",{}).get("displays",[]):
+    name=disp.get("name","")
+    if name and m not in name:
+        print(name); break
+' "$2"
+}
+
 # "<number>\t<display name>" per workspace.
 ws_map() {
     "$1" query workspaces --format json 2>/dev/null | /usr/bin/python3 -c '
@@ -154,7 +171,7 @@ ws_move_one() {
 }
 
 workspaces_apply() {
-    local state="$1" ctl want src ws name rc moved="" stuck="" failed=""
+    local state="$1" ctl want src ws name rc prev moved="" stuck="" failed=""
     (( DOCK_MOVE_WORKSPACES )) || return 0
     if ! ctl="$(find_omniwmctl)"; then
         note "workspaces: omniwmctl not found, skipped"
@@ -175,12 +192,20 @@ workspaces_apply() {
                 *) failed="$failed $ws" ;;
             esac
         done < <(ws_map "$ctl")
-        if [[ -n "$moved" ]]; then printf '%s\n' "${moved# }" > "$STATE_DIR/moved-workspaces"; fi
+        # Union with whatever a previous dock could not put back. Overwriting
+        # loses that list, and those workspaces then stay on the built-in for
+        # ever because nothing remembers they belong on the Dell.
+        if [[ -n "$moved" ]]; then
+            prev=""
+            [[ -f "$STATE_DIR/moved-workspaces" ]] && prev="$(cat "$STATE_DIR/moved-workspaces")"
+            printf '%s\n' $prev $moved | awk 'NF' | sort -n -u | paste -sd' ' - \
+                > "$STATE_DIR/moved-workspaces"
+        fi
     else
         # Put back exactly what we moved, so a workspace that always lived on the
         # built-in is not dragged onto the Dell by accident.
         [[ -f "$STATE_DIR/moved-workspaces" ]] || { note "workspaces: nothing recorded to restore"; return 0; }
-        src="$(ws_map "$ctl" | awk -F'\t' -v b="$WS_INTERNAL_MATCH" 'index($2,b)==0 {print $2; exit}')"
+        src="$(external_display "$ctl" "$WS_INTERNAL_MATCH")"
         if [[ -z "$src" ]]; then note "workspaces: no external display present, skipped"; return 0; fi
         for ws in $(cat "$STATE_DIR/moved-workspaces"); do
             rc=0; ws_move_one "$ctl" "$ws" "$src" || rc=$?
@@ -190,7 +215,13 @@ workspaces_apply() {
                 *) failed="$failed $ws" ;;
             esac
         done
-        rm -f "$STATE_DIR/moved-workspaces"
+        # Keep the ones that did not make it, so the next dock retries them.
+        if [[ -n "$stuck$failed" ]]; then
+            printf '%s\n' $stuck $failed | awk 'NF' | sort -n -u | paste -sd' ' - \
+                > "$STATE_DIR/moved-workspaces"
+        else
+            rm -f "$STATE_DIR/moved-workspaces"
+        fi
     fi
 
     [[ -n "$moved" ]]  && note "workspaces moved:${moved}"
