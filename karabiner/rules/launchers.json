@@ -47,7 +47,7 @@
       ]
     },
     {
-      "description": "Cmd+Shift+B: new window of the default browser",
+      "description": "Option+Shift+B: new window of the default browser",
       "manipulators": [
         {
           "type": "basic",
@@ -55,7 +55,7 @@
             "key_code": "b",
             "modifiers": {
               "mandatory": [
-                "command",
+                "option",
                 "shift"
               ],
               "optional": []
