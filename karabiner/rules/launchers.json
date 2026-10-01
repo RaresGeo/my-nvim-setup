@@ -2,7 +2,7 @@
   "title": "Launchers (dotfiles: karabiner/rules/launchers.json)",
   "rules": [
     {
-      "description": "Cmd+Enter: new Alacritty instance",
+      "description": "Option+Enter: new Alacritty instance",
       "manipulators": [
         {
           "type": "basic",
@@ -10,8 +10,9 @@
             "key_code": "return_or_enter",
             "modifiers": {
               "mandatory": [
-                "command"
-              ]
+                "option"
+              ],
+              "optional": []
             }
           },
           "to": [
@@ -23,7 +24,30 @@
       ]
     },
     {
-      "description": "Cmd+Shift+B: new window of the default browser",
+      "description": "Option+Cmd+Enter: new Alacritty instance running tmux",
+      "manipulators": [
+        {
+          "type": "basic",
+          "from": {
+            "key_code": "return_or_enter",
+            "modifiers": {
+              "mandatory": [
+                "option",
+                "command"
+              ],
+              "optional": []
+            }
+          },
+          "to": [
+            {
+              "shell_command": "open -na Alacritty --args -e /bin/zsh -lc 'exec /opt/homebrew/bin/tmux'"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "description": "Option+Shift+B: new window of the default browser",
       "manipulators": [
         {
           "type": "basic",
@@ -31,9 +55,10 @@
             "key_code": "b",
             "modifiers": {
               "mandatory": [
-                "command",
+                "option",
                 "shift"
-              ]
+              ],
+              "optional": []
             }
           },
           "to": [

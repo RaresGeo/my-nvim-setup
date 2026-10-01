@@ -1,0 +1,38 @@
+{
+  "title": "Alacritty close (dotfiles: karabiner/rules/alacritty-close.json)",
+  "rules": [
+    {
+      "description": "Option+W in Alacritty: send Cmd+W (no title bar for the WM to close via)",
+      "manipulators": [
+        {
+          "type": "basic",
+          "from": {
+            "key_code": "w",
+            "modifiers": {
+              "mandatory": [
+                "option"
+              ],
+              "optional": []
+            }
+          },
+          "to": [
+            {
+              "key_code": "w",
+              "modifiers": [
+                "command"
+              ]
+            }
+          ],
+          "conditions": [
+            {
+              "type": "frontmost_application_if",
+              "bundle_identifiers": [
+                "^org\\.alacritty$"
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
