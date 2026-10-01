@@ -42,19 +42,30 @@ the generated `~/.config/alacritty/dock.toml` that `alacritty.toml` imports. The
 ultrawide is 109 PPI at native 1x, so the app has to carry the readability
 itself.
 
-It also moves OmniWM workspaces off the Dell on the way out and back on the way
-in. Undocking does not unplug the Dell — the cable stays and only its input
-changes — so macOS keeps it as a live display, and a workspace parked there
-becomes invisible rather than gone. Only the workspaces that were actually
-moved are put back, recorded in `~/.local/state/dock/moved-workspaces`, so a
-workspace that always lived on the built-in is not dragged onto the Dell.
+It also places OmniWM workspaces. Undocking does not unplug the Dell — the cable
+stays and only its input changes — so macOS keeps it as a live display, and a
+workspace parked there becomes invisible rather than gone. OmniWM cannot see any
+of that, so `dockctl` owns placement outright and `omniwm/settings.toml` leaves
+every workspace on `main` rather than pinning it to a display.
 
-`DOCK_MOVE_WORKSPACES=0` turns that off; `WS_INTERNAL_MATCH` is the substring
-that identifies the built-in panel in OmniWM's display names. Two wrinkles worth
-knowing: `omniwmctl workspace move-to-monitor` takes a *direction*, not a
-display, and the usable direction does not follow the frame geometry, so it is
-discovered by trying; and `--force` is needed because `omniwm/settings.toml`
-pins every workspace to a `specificDisplay`.
+The wanted layout is declared, not remembered: docked, `WS_INTERNAL_WORKSPACES`
+(10) stays on the built-in and everything else goes to the external panel;
+undocked they all come home, because it is the only panel you can see. Each run
+compares the live placement against that and moves only what is wrong, so it is
+idempotent and self-correcting — a run that is already right does nothing, and a
+run after something drifted puts it back. There is no record file to go stale.
+
+Placement is reconciled when the set of attached displays changes as well as
+when the dock state does. Plugging the Dell in while the keyboard is already
+attached is not a dock-state change, and with nothing pinned, OmniWM would put
+the workspaces on whatever is `main`; `dockctl status` prints the signature it
+compares against.
+
+`DOCK_MOVE_WORKSPACES=0` turns it off; `WS_INTERNAL_MATCH` is the substring that
+identifies the built-in panel in OmniWM's display names. One wrinkle:
+`omniwmctl workspace move-to-monitor` takes a *direction*, not a display, and the
+usable direction follows neither the frame geometry nor the routing arrangement,
+so it is discovered by trying and cached per target.
 
 A natively-fullscreened window is tied to its own macOS Space on one display and
 no direction will move its workspace, so those are reported and left alone.

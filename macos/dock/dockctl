@@ -183,6 +183,23 @@ ws_move_one() {
     return 1
 }
 
+# A fingerprint of the attached panels. Placement has to be reconciled when the
+# display set changes and not only when the dock state does: with nothing pinned
+# in settings.toml, OmniWM puts a workspace on whatever is "main" when a panel
+# appears, and plugging the Dell in while the keyboard is already attached is not
+# a dock-state change, so nothing would otherwise put workspace 10 back.
+display_signature() {
+    local ctl
+    ctl="$(find_omniwmctl)" || { printf '%s\n' '?'; return 0; }
+    "$ctl" query displays --format json 2>/dev/null | /usr/bin/python3 -c '
+import json,sys
+try: d=json.load(sys.stdin)
+except Exception: print("?"); sys.exit(0)
+names=sorted(x.get("name","") for x in d.get("result",{}).get("payload",{}).get("displays",[]))
+print("|".join(n for n in names if n) or "?")
+' || printf '%s\n' '?'
+}
+
 ws_wants_internal() {
     local ws="$1" n
     for n in $WS_INTERNAL_WORKSPACES; do [[ "$n" == "$ws" ]] && return 0; done
@@ -264,6 +281,7 @@ apply_state() {
     mkdir -p "$STATE_DIR"
     workspaces_apply "$state"
     printf '%s\n' "$state" > "$STATE_FILE"
+    display_signature > "$STATE_DIR/displays"
 }
 
 current_font_size() {
@@ -277,11 +295,14 @@ case "$cmd" in
         say "detected:   $detected"
         say "last applied: $( [[ -f "$STATE_FILE" ]] && cat "$STATE_FILE" || say '(never)' )"
         say "alacritty size: $(current_font_size)"
+        say "displays:   $(display_signature)"
         ;;
     apply)
         detected="$(detect_state)"
         last="$( [[ -f "$STATE_FILE" ]] && cat "$STATE_FILE" || true )"
-        if [[ "${2:-}" == "--force" || "$detected" != "$last" ]]; then
+        sig="$(display_signature)"
+        last_sig="$( [[ -f "$STATE_DIR/displays" ]] && cat "$STATE_DIR/displays" || true )"
+        if [[ "${2:-}" == "--force" || "$detected" != "$last" || "$sig" != "$last_sig" ]]; then
             apply_state "$detected"
         fi
         ;;
