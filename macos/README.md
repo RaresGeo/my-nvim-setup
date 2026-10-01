@@ -67,8 +67,12 @@ identifies the built-in panel in OmniWM's display names. One wrinkle:
 usable direction follows neither the frame geometry nor the routing arrangement,
 so it is discovered by trying and cached per target.
 
-A natively-fullscreened window is tied to its own macOS Space on one display and
-no direction will move its workspace, so those are reported and left alone.
+OmniWM refuses to move a workspace that is currently *shown* on its panel and
+has windows on it — an empty one moves while visible, and the same workspace
+moves once something else is shown in its place. So on that refusal `dockctl`
+switches the panel to another workspace and retries. If the stuck one is the
+only workspace on that panel there is nothing to swap in, and it is reported and
+left alone.
 
 Two things this deliberately does **not** do, both decided by measuring:
 

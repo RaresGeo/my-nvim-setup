@@ -170,8 +170,11 @@ ws_move_one() {
         out="$("$ctl" workspace move-to-monitor "$ws" "$dir" --force 2>&1)" || true
         case "$out" in
             *workspace_state_conflict*)
-                # A natively-fullscreened window is tied to its own macOS Space on
-                # one display. No direction moves it, so stop trying this workspace.
+                # OmniWM refuses to move a workspace that is currently SHOWN on its
+                # panel and has windows on it. An empty one moves while visible, and
+                # the same workspace moves once something else is shown in its place,
+                # so this is recoverable -- see ws_unstick. No direction gets past it,
+                # so stop trying them.
                 return 2 ;;
         esac
         if [[ "$(ws_display_of "$ctl" "$ws")" == *"$want"* ]]; then
@@ -198,6 +201,17 @@ except Exception: print("?"); sys.exit(0)
 names=sorted(x.get("name","") for x in d.get("result",{}).get("payload",{}).get("displays",[]))
 print("|".join(n for n in names if n) or "?")
 ' || printf '%s\n' '?'
+}
+
+# Show some other workspace on the panel this one is stuck to, which is what
+# makes it movable. Any other workspace already on that panel will do; if it is
+# the only one there, nothing can take its place and it stays put.
+ws_unstick() {
+    local ctl="$1" ws="$2" disp="$3" other
+    other="$(ws_map "$ctl" | awk -F'\t' -v me="$ws" -v d="$disp" '$1 != me && $2 == d {print $1; exit}')"
+    [[ -n "$other" ]] || return 1
+    "$ctl" command switch-workspace anywhere "$other" >/dev/null 2>&1 || return 1
+    return 0
 }
 
 ws_wants_internal() {
@@ -237,6 +251,9 @@ workspaces_apply() {
         # direction that would push it off a display it is correctly on.
         [[ "$name" == *"$want"* ]] && continue
         rc=0; ws_move_one "$ctl" "$ws" "$want" || rc=$?
+        if (( rc == 2 )) && ws_unstick "$ctl" "$ws" "$name"; then
+            rc=0; ws_move_one "$ctl" "$ws" "$want" || rc=$?
+        fi
         case "$rc" in
             0) moved="$moved $ws" ;;
             2) stuck="$stuck $ws" ;;
@@ -248,7 +265,7 @@ workspaces_apply() {
     rm -f "$STATE_DIR/moved-workspaces"
 
     [[ -n "$moved" ]]  && note "workspaces moved:${moved}"
-    [[ -n "$stuck" ]]  && note "workspaces left put (native fullscreen):${stuck}"
+    [[ -n "$stuck" ]]  && note "workspaces left put (shown, with windows, nothing to swap in):${stuck}"
     [[ -n "$failed" ]] && note "workspaces could not move:${failed}"
     [[ -z "$moved$stuck$failed" ]] && note "workspaces: already placed"
     return 0
