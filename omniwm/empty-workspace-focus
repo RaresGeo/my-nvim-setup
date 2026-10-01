@@ -1,0 +1,15 @@
+#!/bin/bash
+# Activates Finder whenever the active OmniWM workspace has no windows.
+# macOS always keeps some app frontmost regardless of which Space is
+# visible, so without this an off-screen window on another workspace
+# silently keeps eating your keystrokes.
+
+while true; do
+    omniwmctl subscribe active-workspace --format ndjson 2>/dev/null | while IFS= read -r line; do
+        [ "$(jq -r '.kind' <<<"$line" 2>/dev/null)" = "event" ] || continue
+        total=$(omniwmctl query workspaces --current --fields window-counts --format ndjson 2>/dev/null \
+            | jq -r '.result.payload.workspaces[0].counts.total // empty')
+        [ "$total" = "0" ] && osascript -e 'tell application "Finder" to activate' >/dev/null 2>&1
+    done
+    sleep 2
+done
