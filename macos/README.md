@@ -23,7 +23,7 @@ brew install bash                       # the installers need bash 4+; macOS shi
 | `Brewfile` | bash, Nerd Font, CLI tools (fzf, zoxide, eza, bat, btop, gh, mise, herdr, ...) |
 | `alacritty/alacritty.toml` | `~/.config/alacritty/alacritty.toml` |
 | `theme/kanagawa/` | `~/.local/state/omarchy/current/theme`, the path nvim, zsh and Alacritty read colors from |
-| `defaults.sh` | Fast key repeat, no press-and-hold popup, screenshots in `~/Pictures/Screenshots`, quittable Finder |
+| `defaults.sh` | Fast key repeat, no press-and-hold popup, screenshots in `~/Pictures/Screenshots`, quittable Finder, Cmd+Space freed from Spotlight for Raycast |
 | `build-alacritty.sh` | Builds the latest Alacritty release into `~/Applications` (Homebrew no longer ships it) |
 | `doctor.sh` | Prints what to look at when something misbehaves |
 

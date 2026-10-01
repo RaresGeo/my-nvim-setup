@@ -21,5 +21,16 @@ defaults write com.apple.screencapture location -string "$HOME/Pictures/Screensh
 defaults write com.apple.finder QuitMenuItem -bool true
 defaults write com.apple.finder CreateDesktop -bool false
 
+# Free up Cmd+Space and Cmd+Option+Space from Spotlight so Raycast's own
+# bindings for them actually fire (macOS's system shortcut wins otherwise,
+# and this survives macOS updates resetting it back on). Add can silently
+# no-op on an already-present key, so Set follows it unconditionally.
+HOTKEYS_PLIST="$HOME/Library/Preferences/com.apple.symbolichotkeys.plist"
+for key in 64 65; do
+    /usr/libexec/PlistBuddy -c "Add :AppleSymbolicHotKeys:$key dict" "$HOTKEYS_PLIST" 2>/dev/null
+    /usr/libexec/PlistBuddy -c "Add :AppleSymbolicHotKeys:$key:enabled bool false" "$HOTKEYS_PLIST" 2>/dev/null
+    /usr/libexec/PlistBuddy -c "Set :AppleSymbolicHotKeys:$key:enabled false" "$HOTKEYS_PLIST"
+done
+
 killall Finder 2>/dev/null || true
 killall SystemUIServer 2>/dev/null || true
