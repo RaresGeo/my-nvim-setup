@@ -13,7 +13,8 @@ Input Monitoring.
 | File | Does |
 |------|------|
 | `builtin-keyboard.json` | On the MacBook's own keyboard, swaps fn and left Ctrl so Ctrl sits in the corner. External keyboards are untouched: the built-in one is the only keyboard that reports no vendor or product ID. |
-| `rules/launchers.json` | **Cmd+Enter**: a new Alacritty instance. **Cmd+Shift+B**: a new window of the default browser. |
+| `rules/launchers.json` | **Option+Enter**: a new Alacritty instance. **Option+Cmd+Enter**: one running tmux. **Option+Shift+B**: a new window of the default browser. |
+| `rules/alacritty-close.json` | **Option+W** in Alacritty sends Cmd+W, so the window closes through Alacritty's own handling; it has no title bar for a window manager to press. |
 | `bin/open-browser` | Works out the default browser and opens a new window the way that browser needs (Chromium, Firefox-based, Safari) |
 
 Karabiner owns `~/.config/karabiner/karabiner.json`, so `install.sh` merges into
@@ -22,5 +23,15 @@ the selected profile rather than replacing it. The device entry and each rule
 old file is backed up whenever something changes. Change remaps here and re-run
 the module rather than editing them in Karabiner's UI.
 
-With a PC keyboard, Cmd is the Super key, so the launchers are Super+Enter and
-Super+Shift+B, as on Omarchy.
+Descriptions double as rule identity, so the descriptions installed on the last
+run are recorded in `~/.config/karabiner/.dotfiles-rules.json`. Renaming or
+deleting a rule here therefore removes the old copy from the profile instead of
+stranding it; rules added by hand in Karabiner's UI are not listed and survive.
+
+Every launcher sits on Option, matching the [`omniwm`](../omniwm/README.md)
+module, so Command is left entirely to macOS apps — Cmd+Shift+B in particular
+goes back to toggling the browser's own bookmarks bar.
+
+Karabiner intercepts at the HID level, so a combo it claims never reaches
+OmniWM. The two these launchers take, Option+Shift+B and Option+, are therefore
+left unassigned in `omniwm/settings.toml` rather than bound on both sides.

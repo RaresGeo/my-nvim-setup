@@ -64,7 +64,7 @@ mv ~/.config/nvim ~/.config/dotfiles
 | `herdr` | `~/.config/herdr/config.toml` | Omarchy (ships with it) or macOS (Homebrew) |
 | `omarchy` | Hyprland overrides, theme hooks | Omarchy |
 | [`macos`](macos/README.md) | Alacritty, theme snapshot, CLI tools, system defaults | macOS |
-| [`karabiner`](karabiner/README.md) | Built-in keyboard remap, Cmd+Enter / Cmd+Shift+B launchers | macOS |
+| [`karabiner`](karabiner/README.md) | Built-in keyboard remap, terminal launchers, Alacritty close fix | macOS |
 | [`aerospace`](aerospace/README.md) | Tiling window manager, minimal config | macOS |
 
 ## Omarchy
