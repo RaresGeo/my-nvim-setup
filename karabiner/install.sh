@@ -4,7 +4,8 @@
 #   - builtin-keyboard.json: swaps fn and left Ctrl on the MacBook's own
 #     keyboard, so Ctrl sits in the corner. External keyboards are untouched.
 #   - rules/*.json: complex modifications (Option+Enter terminal, Option+Shift+B
-#     browser), also linked into Karabiner's assets for its UI.
+#     browser, Option+, to dismiss a notification), also linked into
+#     Karabiner's assets for its UI.
 #
 # Karabiner owns karabiner.json, so this merges into the selected profile
 # instead of replacing it: our device entry and rules are swapped in by
@@ -36,6 +37,7 @@ for rule in "$MODULE_DIR"/rules/*.json; do
         "$HOME/.config/karabiner/assets/complex_modifications/$(basename "$rule")"
 done
 link karabiner/bin/open-browser "$HOME/.local/bin/open-browser"
+link karabiner/bin/dismiss-notification "$HOME/.local/bin/dismiss-notification"
 
 log "Merging into karabiner.json..."
 /usr/bin/python3 - "$MODULE_DIR" <<'PY'

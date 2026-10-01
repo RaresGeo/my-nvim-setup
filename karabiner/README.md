@@ -8,13 +8,18 @@ Key remaps and launcher shortcuts through
 ```
 
 On the first run, open Karabiner-Elements once and approve its driver and
-Input Monitoring.
+Input Monitoring. Dismissing notifications additionally needs Accessibility for
+`karabiner_console_user_server` (System Settings > Privacy & Security >
+Accessibility), since that is the process the hotkey's command runs as; macOS
+offers to add it the first time Option+, is pressed.
 
 | File | Does |
 |------|------|
 | `builtin-keyboard.json` | On the MacBook's own keyboard, swaps fn and left Ctrl so Ctrl sits in the corner. External keyboards are untouched: the built-in one is the only keyboard that reports no vendor or product ID. |
 | `rules/launchers.json` | **Option+Enter**: a new Alacritty instance. **Option+Cmd+Enter**: one running tmux. **Option+Shift+B**: a new window of the default browser. |
 | `rules/alacritty-close.json` | **Option+W** in Alacritty sends Cmd+W, so the window closes through Alacritty's own handling; it has no title bar for a window manager to press. |
+| `rules/notifications.json` | **Option+,**: dismisses the newest notification banner. |
+| `bin/dismiss-notification` | Presses the banner's own close action through NotificationCenter's accessibility tree; macOS has no API for it. |
 | `bin/open-browser` | Works out the default browser and opens a new window the way that browser needs (Chromium, Firefox-based, Safari) |
 
 Karabiner owns `~/.config/karabiner/karabiner.json`, so `install.sh` merges into
