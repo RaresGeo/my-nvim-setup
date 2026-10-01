@@ -8,8 +8,6 @@
 #
 # What a state change applies:
 #   1. Alacritty font size   (via a generated import -- see font_apply)
-#   2. Zen's Gecko scale     (via user.js -- takes effect on Zen's next launch)
-#   3. Secondary monitor input  -- hands the ultrawide to the other machine
 #
 # Usage:
 #   dockctl status          print the detected state and what is currently set
@@ -34,24 +32,10 @@ DOCK_USB_PRODUCT="${DOCK_USB_PRODUCT:-28694}"
 FONT_SIZE_DOCKED="${FONT_SIZE_DOCKED:-18}"
 FONT_SIZE_UNDOCKED="${FONT_SIZE_UNDOCKED:-14}"
 
-# Gecko's layout.css.devPixelsPerPx REPLACES the macOS backing scale rather
-# than multiplying it, so it needs the panel's own number, not a ratio.
-# -1.0 means "follow macOS" (2.0 on the built-in XDR).
-ZEN_SCALE_DOCKED="${ZEN_SCALE_DOCKED:-1.25}"
-ZEN_SCALE_UNDOCKED="${ZEN_SCALE_UNDOCKED:--1.0}"
 
-# Which input to hand the ultrawide to on the way out. 15 is DisplayPort 1 on
-# the standard VCP 0x60 addressing; LG panels use alternate addressing instead,
-# where DP 1 is 208 and the verb is `set input-alt`. If the ddcutil line on the
-# Arch box is `setvcp 60 0x0f`, then 15 is right.
-DOCK_MONITOR_INPUT="${DOCK_MONITOR_INPUT:-15}"
-# Optional, and worth pinning once we are at the desk: m1ddc display selector.
-# Positional numbers shift when displays come and go, so prefer a stable method
-# such as `edid:<uuid>` or `basic:<vendor>:<model>:<serial>` from `m1ddc display
-# list detailed`. Empty means "the one external display m1ddc finds".
-DOCK_MONITOR_DISPLAY="${DOCK_MONITOR_DISPLAY:-}"
 
 ALACRITTY_OVERLAY="${ALACRITTY_OVERLAY:-$HOME/.config/alacritty/dock.toml}"
+
 STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/dock"
 STATE_FILE="$STATE_DIR/state"
 
@@ -92,121 +76,39 @@ EOF
     note "alacritty font size -> $size  ($ALACRITTY_OVERLAY)"
 }
 
-# --- 2. Zen -------------------------------------------------------------------
-# Pick the profile with the freshest prefs.js. Resolving it from the running
-# process is tempting but the profile paths contain spaces, so parsing `ps`
-# output is ambiguous; mtime is deterministic and works when Zen is closed.
-zen_profile() {
-    local base="$HOME/Library/Application Support/zen/Profiles"
-    [[ -d "$base" ]] || return 1
-    local p t best=0 newest=""
-    while IFS= read -r p; do
-        t="$(stat -f %m "$p/prefs.js" 2>/dev/null || echo 0)"
-        if (( t > best )); then best="$t"; newest="$p"; fi
-    done < <(find "$base" -mindepth 1 -maxdepth 1 -type d)
-    [[ -n "$newest" ]] || return 1
-    printf '%s\n' "$newest"
-}
+# --- Zen: deliberately NOT managed -------------------------------------------
+# Removed after measuring it. layout.css.devPixelsPerPx at -1.0 ("follow macOS")
+# is correct in BOTH states: 2.0 on the built-in XDR, and 1.0 on the Dell, which
+# runs at native 1x. There is no per-state value to choose, so there is nothing
+# to automate -- the pref is left at -1.0 in the profile's user.js and dockctl
+# does not touch it. The earlier 1.25 came from treating the pref as a readability
+# boost, but it REPLACES the macOS backing scale instead of multiplying it, which
+# is what made Zen render at 62.5% on the laptop.
 
-# user.js is the user's file and may hold unrelated prefs, so rewrite only our
-# own line and carry everything else through untouched. user.js is re-applied
-# over prefs.js at every startup, which is why we write here and not prefs.js
-# (Zen rewrites prefs.js from memory on exit and would undo us).
-zen_apply() {
-    local scale="$1" profile pref='layout.css.devPixelsPerPx' uj tmp
-    if ! profile="$(zen_profile)"; then
-        note "zen: no profile found, skipped"
-        return 0
-    fi
-    uj="$profile/user.js"
-    tmp="$(mktemp)"
-    # Carry over everything else in the file, minus our own delimited block and
-    # any stray copy of the pref, so repeated runs cannot accumulate cruft.
-    if [[ -f "$uj" ]]; then
-        awk -v pref="$pref" '
-            /^\/\/ >>> dockctl managed >>>$/ { skip = 1; next }
-            /^\/\/ <<< dockctl managed <<<$/ { skip = 0; next }
-            skip                              { next }
-            index($0, pref)                   { next }
-                                              { print }
-        ' "$uj" > "$tmp"
-    fi
-    {
-        say "// >>> dockctl managed >>>"
-        say "// Gecko's scale for the current dock state. This pref REPLACES the macOS"
-        say "// backing scale rather than multiplying it, so it takes the panel's own"
-        say "// number: -1.0 follows macOS (2.0 on the built-in XDR), 1.25 suits the"
-        say "// 34\" ultrawide driven at native 1x. Rewritten on every dock change."
-        say "user_pref(\"$pref\", \"$scale\");"
-        say "// <<< dockctl managed <<<"
-    } >> "$tmp"
-    mv "$tmp" "$uj"
-    note "zen devPixelsPerPx -> $scale  (applies on Zen's next launch)"
-}
-
-# launchd hands this script a minimal PATH (/usr/bin:/bin:/usr/sbin:/sbin), so
-# Homebrew's bin is absent -- the same trap that silently stops tpm from loading
-# tmux plugins under a GUI launcher. Resolve the binary instead of trusting PATH,
-# or the handover fails quietly forever.
-find_m1ddc() {
-    local c
-    for c in "${DOCK_M1DDC:-}" /opt/homebrew/bin/m1ddc /usr/local/bin/m1ddc; do
-        if [[ -n "$c" && -x "$c" ]]; then printf '%s\n' "$c"; return 0; fi
-    done
-    command -v m1ddc 2>/dev/null || return 1
-}
-
-# --- 3. Secondary monitor input ----------------------------------------------
-# Deliberately ONE-WAY: undock only. Handing the monitor over is all this Mac has
-# to do, because the other machine switches it back itself when the USB switch
-# returns the keyboard here. That asymmetry is also what keeps DDC reliable --
-# DDC/CI rides the video cable, and we only ever send while this Mac still owns
-# the display. We never have to talk to a monitor that is already showing
-# someone else's input, which is the case that may not have worked at all.
-monitor_apply() {
-    local state="$1" rc=0 out
-    [[ "$state" == "undocked" ]] || return 0
-
-    # Escape hatch: a full command wins over the m1ddc path below.
-    if [[ -n "${DOCK_MONITOR_CMD:-}" ]]; then
-        out="$(DOCK_STATE="$state" bash -c "$DOCK_MONITOR_CMD" 2>&1)" || rc=$?
-        if (( rc == 0 )); then note "monitor: handed over (DOCK_MONITOR_CMD)"
-        else note "monitor: DOCK_MONITOR_CMD failed (exit $rc) $out"; fi
-        return 0
-    fi
-
-    local ddc
-    if ! ddc="$(find_m1ddc)"; then
-        note "monitor: m1ddc not found, skipped"
-        return 0
-    fi
-
-    # Spelled out rather than built as an array: macOS ships bash 3.2, where
-    # expanding an empty array under `set -u` is itself an error -- and launchd
-    # runs this with a minimal PATH, so Homebrew's newer bash is not guaranteed.
-    if [[ -n "$DOCK_MONITOR_DISPLAY" ]]; then
-        out="$("$ddc" display "$DOCK_MONITOR_DISPLAY" set input "$DOCK_MONITOR_INPUT" 2>&1)" || rc=$?
-    else
-        out="$("$ddc" set input "$DOCK_MONITOR_INPUT" 2>&1)" || rc=$?
-    fi
-    if (( rc == 0 )); then
-        note "monitor: input -> $DOCK_MONITOR_INPUT (handed over)"
-    else
-        # Having genuinely unplugged is the ordinary case here, and m1ddc says
-        # "Could not find a suitable external display". Never fatal.
-        note "monitor: not switched ($out)"
-    fi
-}
+# --- Monitor input: deliberately NOT done here --------------------------------
+# Moved to the desktop. Two reasons, both measured:
+#
+#   * This Mac cannot speak DDC to the Dell at all. Every read fails with
+#     "DDC communication failure: (iokit/?) unknown subsystem error" -- an
+#     I2C-level failure, not an unsupported-VCP reply. The link is a USB-C
+#     (DP Alt Mode) to HDMI cable, and that active protocol conversion does not
+#     carry the DDC sideband. Nothing on this side fixes that.
+#   * The desktop can, in both directions, including while the panel is showing
+#     this Mac's HDMI-1 -- verified with `dell-input status` returning
+#     "HDMI-1 (sl=0x11)" from Arch over DP-1 with the Mac on screen.
+#
+# So the desktop owns the handover via its own dell-input script, triggered by
+# the keyboard arriving or leaving. For the record, the panel's VCP 0x60 values
+# are dp1=0x0f, hdmi1=0x11, hdmi2=0x12; this Mac is on HDMI-1.
 
 apply_state() {
     local state="$1"
     say "applying: $state"
     case "$state" in
-        docked)   font_apply "$FONT_SIZE_DOCKED";   zen_apply "$ZEN_SCALE_DOCKED" ;;
-        undocked) font_apply "$FONT_SIZE_UNDOCKED"; zen_apply "$ZEN_SCALE_UNDOCKED" ;;
+        docked)   font_apply "$FONT_SIZE_DOCKED" ;;
+        undocked) font_apply "$FONT_SIZE_UNDOCKED" ;;
         *) say "unknown state: $state" >&2; return 1 ;;
     esac
-    monitor_apply "$state"
     mkdir -p "$STATE_DIR"
     printf '%s\n' "$state" > "$STATE_FILE"
 }
@@ -222,9 +124,6 @@ case "$cmd" in
         say "detected:   $detected"
         say "last applied: $( [[ -f "$STATE_FILE" ]] && cat "$STATE_FILE" || say '(never)' )"
         say "alacritty size: $(current_font_size)"
-        if profile="$(zen_profile 2>/dev/null)"; then
-            say "zen scale:  $(grep -oE '"-?[0-9.]+"\);' "$profile/user.js" 2>/dev/null | tail -1 | tr -d '");' || say '(unset)')"
-        fi
         ;;
     apply)
         detected="$(detect_state)"
