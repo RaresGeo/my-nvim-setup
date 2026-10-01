@@ -63,8 +63,8 @@ mv ~/.config/nvim ~/.config/dotfiles
 | `zsh` | `~/.zshrc`, oh-my-zsh and plugins | any |
 | `herdr` | `~/.config/herdr/config.toml` | Omarchy (ships with it) or macOS (Homebrew) |
 | `omarchy` | Hyprland overrides, theme hooks | Omarchy |
-| [`macos`](macos/README.md) | Alacritty, theme snapshot, CLI tools, system defaults | macOS |
-| [`karabiner`](karabiner/README.md) | Built-in keyboard remap, terminal launchers, Alacritty close fix | macOS |
+| [`macos`](macos/README.md) | Alacritty, theme snapshot, CLI tools, system defaults, dock-state switch | macOS |
+| [`karabiner`](karabiner/README.md) | Built-in keyboard remap, terminal launchers, Alacritty close fix, notification dismiss | macOS |
 | [`omniwm`](omniwm/README.md) | Tiling window manager, dwindle layout | macOS |
 
 ## Omarchy
@@ -152,12 +152,13 @@ left out, for the same reason.
 │   ├── Brewfile
 │   ├── alacritty/          # -> ~/.config/alacritty/
 │   ├── theme/kanagawa/     # -> ~/.local/state/omarchy/current/theme
+│   ├── dock/dockctl        # -> ~/.local/bin/dockctl, plus its launchd agent
 │   └── defaults.sh, build-alacritty.sh, doctor.sh
 ├── karabiner/
 │   ├── install.sh          # merges into ~/.config/karabiner/karabiner.json
 │   ├── builtin-keyboard.json
 │   ├── rules/*.json        # -> ~/.config/karabiner/assets/complex_modifications/
-│   └── bin/open-browser    # -> ~/.local/bin/open-browser
+│   └── bin/*               # -> ~/.local/bin/ (open-browser, dismiss-notification)
 └── omniwm/
     ├── install.sh
     ├── settings.toml           # -> ~/.config/omniwm/settings.toml
