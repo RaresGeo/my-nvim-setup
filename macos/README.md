@@ -42,6 +42,23 @@ the generated `~/.config/alacritty/dock.toml` that `alacritty.toml` imports. The
 ultrawide is 109 PPI at native 1x, so the app has to carry the readability
 itself.
 
+It also moves OmniWM workspaces off the Dell on the way out and back on the way
+in. Undocking does not unplug the Dell — the cable stays and only its input
+changes — so macOS keeps it as a live display, and a workspace parked there
+becomes invisible rather than gone. Only the workspaces that were actually
+moved are put back, recorded in `~/.local/state/dock/moved-workspaces`, so a
+workspace that always lived on the built-in is not dragged onto the Dell.
+
+`DOCK_MOVE_WORKSPACES=0` turns that off; `WS_INTERNAL_MATCH` is the substring
+that identifies the built-in panel in OmniWM's display names. Two wrinkles worth
+knowing: `omniwmctl workspace move-to-monitor` takes a *direction*, not a
+display, and the usable direction does not follow the frame geometry, so it is
+discovered by trying; and `--force` is needed because `omniwm/settings.toml`
+pins every workspace to a `specificDisplay`.
+
+A natively-fullscreened window is tied to its own macOS Space on one display and
+no direction will move its workspace, so those are reported and left alone.
+
 Two things this deliberately does **not** do, both decided by measuring:
 
 | | |
