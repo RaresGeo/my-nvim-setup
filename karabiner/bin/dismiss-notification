@@ -1,0 +1,74 @@
+#!/bin/bash
+# Dismiss the newest notification banner. Bound to Option+, by
+# karabiner/rules/notifications.json.
+#
+# macOS exposes no API for this, so we drive NotificationCenter's own
+# accessibility tree. Every banner is a group in
+#
+#   window "Notification Center" > group 1 > group 1 > scroll area 1
+#
+# and carries the same actions the banner offers on hover; the one described
+# "Close" is the X. The window only exists while something is on screen.
+# Banners stack downwards from the top right, so the smallest y is the latest.
+#
+# Whatever runs this needs Accessibility (System Settings > Privacy & Security >
+# Accessibility). From the hotkey that is Karabiner's own
+# karabiner_console_user_server, not the terminal.
+
+set -uo pipefail
+
+status=0
+result="$(osascript <<'APPLESCRIPT' 2>&1
+tell application "System Events"
+    if not (exists application process "NotificationCenter") then
+        return "notification-center-not-running"
+    end if
+    tell application process "NotificationCenter"
+        if not (exists window "Notification Center") then return "nothing-showing"
+        try
+            set banners to groups of scroll area 1 of group 1 of group 1 of ¬
+                window "Notification Center"
+        on error
+            return "notification-center-layout-changed"
+        end try
+        if banners is {} then return "nothing-showing"
+
+        -- Coerce before indexing, or the subscript is read as another
+        -- reference into the process and never evaluated.
+        set newest to item 1 of banners
+        set newestY to item 2 of ((position of newest) as list)
+        repeat with banner in banners
+            set bannerY to item 2 of ((position of banner) as list)
+            if bannerY < newestY then
+                set newest to contents of banner
+                set newestY to bannerY
+            end if
+        end repeat
+
+        -- The actions are named opaquely; the description is the label.
+        try
+            perform (first action of newest whose description is "Close")
+            return "dismissed"
+        end try
+        try
+            perform (first action of newest whose description contains "Close")
+            return "dismissed"
+        end try
+        return "no-close-action"
+    end tell
+end tell
+APPLESCRIPT
+)" || status=$?
+
+if (( status != 0 )); then
+    echo "dismiss-notification: ${result:-osascript failed}" >&2
+    exit "$status"
+fi
+
+case "$result" in
+    dismissed|nothing-showing|notification-center-not-running) ;;
+    *)
+        echo "dismiss-notification: $result" >&2
+        exit 1
+        ;;
+esac

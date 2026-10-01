@@ -1,0 +1,27 @@
+{
+  "title": "Notifications (dotfiles: karabiner/rules/notifications.json)",
+  "rules": [
+    {
+      "description": "Option+Comma: dismiss the newest notification",
+      "manipulators": [
+        {
+          "type": "basic",
+          "from": {
+            "key_code": "comma",
+            "modifiers": {
+              "mandatory": [
+                "option"
+              ],
+              "optional": []
+            }
+          },
+          "to": [
+            {
+              "shell_command": "\"$HOME/.local/bin/dismiss-notification\""
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
