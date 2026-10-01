@@ -40,11 +40,16 @@ ALACRITTY_CONFIG="${ALACRITTY_CONFIG:-$HOME/.config/alacritty/alacritty.toml}"
 
 # Undocking does not unplug the Dell -- the cable stays, only its input changes --
 # so macOS keeps it as a live display and anything parked there becomes invisible
-# rather than gone. Haul those workspaces onto the built-in panel on the way out
-# and put them back on the way in. Set to 0 to leave workspaces alone.
+# rather than gone. OmniWM cannot see that, so this script owns where workspaces
+# live: settings.toml leaves them all on "main" and the layout is declared here.
+# Set to 0 to leave workspaces alone.
 DOCK_MOVE_WORKSPACES="${DOCK_MOVE_WORKSPACES:-1}"
 # Substring identifying the built-in panel in OmniWM's display names.
 WS_INTERNAL_MATCH="${WS_INTERNAL_MATCH:-Built-in}"
+# Which workspaces stay on the built-in panel WHILE DOCKED; every other one goes
+# to the external panel. Undocked, all of them come home -- it is the only panel
+# you can see.
+WS_INTERNAL_WORKSPACES="${WS_INTERNAL_WORKSPACES:-10}"
 STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/dock"
 STATE_FILE="$STATE_DIR/state"
 
@@ -146,32 +151,143 @@ for w in d.get("result",{}).get("payload",{}).get("workspaces",[]):
 
 ws_display_of() { ws_map "$1" | awk -F'\t' -v n="$2" '$1==n {print $2; exit}'; }
 
-# move-to-monitor takes a DIRECTION, not a display, and OmniWM's idea of which
-# way a panel lies does not follow the frame geometry (the built-in sits below the
-# Dell in coordinates, yet answers to "left"). So discover the direction once by
-# trying and checking, then reuse it. --force is required because settings.toml
-# pins every workspace to a specificDisplay, which is otherwise a hard conflict.
-ws_dir=""
+# move-to-monitor takes a DIRECTION, not a display, and OmniWM's idea of which way
+# a panel lies follows neither the frame geometry nor the routing arrangement:
+# with the built-in at gridColumn 0 and the Dell at 1, moving a workspace from the
+# Dell to the built-in still answers to "right". So the direction is discovered by
+# trying and checking, and cached per target -- one run can move workspaces both
+# ways, and a single cache would send the second direction the wrong way.
+#
+# --force stays even though settings.toml no longer pins workspaces: this script
+# is the owner of placement, so a move should not be refused on the strength of
+# OmniWM's own idea of where a workspace lives.
+ws_dir_internal=""
+ws_dir_external=""
+ws_borrowed=""
+ws_moved=""
+ws_stuck=""
+ws_failed=""
 ws_move_one() {
-    local ctl="$1" ws="$2" want="$3" dir out
-    for dir in $ws_dir left right up down; do
+    local ctl="$1" ws="$2" want="$3" dir out hint
+    if [[ "$want" == "$WS_INTERNAL_MATCH" ]]; then hint="$ws_dir_internal"; else hint="$ws_dir_external"; fi
+    for dir in $hint left right up down; do
         out="$("$ctl" workspace move-to-monitor "$ws" "$dir" --force 2>&1)" || true
         case "$out" in
             *workspace_state_conflict*)
-                # A natively-fullscreened window is tied to its own macOS Space on
-                # one display. No direction moves it, so stop trying this workspace.
+                # OmniWM refuses to move a workspace that is currently SHOWN on its
+                # panel and has windows on it. An empty one moves while visible, and
+                # the same workspace moves once something else is shown in its place,
+                # so this is recoverable -- see ws_unstick. No direction gets past it,
+                # so stop trying them.
                 return 2 ;;
         esac
         if [[ "$(ws_display_of "$ctl" "$ws")" == *"$want"* ]]; then
-            ws_dir="$dir"
+            if [[ "$want" == "$WS_INTERNAL_MATCH" ]]; then ws_dir_internal="$dir"
+            else ws_dir_external="$dir"; fi
             return 0
         fi
     done
     return 1
 }
 
+# A fingerprint of the attached panels. Placement has to be reconciled when the
+# display set changes and not only when the dock state does: with nothing pinned
+# in settings.toml, OmniWM puts a workspace on whatever is "main" when a panel
+# appears, and plugging the Dell in while the keyboard is already attached is not
+# a dock-state change, so nothing would otherwise put workspace 10 back.
+display_signature() {
+    local ctl
+    ctl="$(find_omniwmctl)" || { printf '%s\n' '?'; return 0; }
+    "$ctl" query displays --format json 2>/dev/null | /usr/bin/python3 -c '
+import json,sys
+try: d=json.load(sys.stdin)
+except Exception: print("?"); sys.exit(0)
+names=sorted(x.get("name","") for x in d.get("result",{}).get("payload",{}).get("displays",[]))
+print("|".join(n for n in names if n) or "?")
+' || printf '%s\n' '?'
+}
+
+# Show some other workspace on the panel this one is stuck to, which is what
+# makes it movable. Any other workspace already on that panel will do; if it is
+# the only one there, nothing can take its place and it stays put.
+# An empty workspace that is not on this panel. Empty ones are the safe thing to
+# borrow: being empty they can be moved even while shown, so giving one back is
+# never itself blocked.
+ws_empty_elsewhere() {
+    "$1" query workspaces --format json 2>/dev/null | /usr/bin/python3 -c '
+import json,sys
+try: d=json.load(sys.stdin)
+except Exception: sys.exit(0)
+disp=sys.argv[1]
+for w in d.get("result",{}).get("payload",{}).get("workspaces",[]):
+    if (w.get("display") or {}).get("name","") != disp and not (w.get("counts") or {}).get("total",0):
+        print(w.get("number")); break
+' "$2"
+}
+
+ws_unstick() {
+    local ctl="$1" ws="$2" disp="$3" other
+    other="$(ws_map "$ctl" | awk -F'\t' -v me="$ws" -v d="$disp" '$1 != me && $2 == d {print $1; exit}')"
+    if [[ -z "$other" ]]; then
+        # It is the only workspace on that panel, so there is nothing there to
+        # show in its place. Park an empty one on the panel, which is enough to
+        # free this one; the second sweep sends the borrowed one home.
+        other="$(ws_empty_elsewhere "$ctl" "$disp")"
+        [[ -n "$other" ]] || return 1
+        ws_move_one "$ctl" "$other" "$disp" || return 1
+        ws_borrowed="$ws_borrowed $other"
+    fi
+    "$ctl" command switch-workspace anywhere "$other" >/dev/null 2>&1 || return 1
+    return 0
+}
+
+ws_wants_internal() {
+    local ws="$1" n
+    for n in $WS_INTERNAL_WORKSPACES; do [[ "$n" == "$ws" ]] && return 0; done
+    return 1
+}
+
+# Declarative on purpose: work out where every workspace BELONGS in this state
+# and move the ones that are elsewhere. The earlier version recorded what it had
+# moved and replayed that list in reverse, which went wrong in two ways -- the
+# record could be clobbered, and it could not tell a workspace OmniWM had shifted
+# on its own from one it had placed. Comparing against the wanted layout needs no
+# memory at all, so it is idempotent and self-correcting: a run that is already
+# right does nothing, and a run after something drifted puts it back.
+ws_sweep() {
+    local ctl="$1" state="$2" ext ws name want rc
+
+    # From the display list, not the workspace list: when every workspace is on
+    # the built-in there is nothing left pointing at the external panel.
+    ext="$(external_display "$ctl" "$WS_INTERNAL_MATCH")"
+
+    while IFS=$'\t' read -r ws name; do
+        [[ -n "$ws" ]] || continue
+        if [[ "$state" == "docked" && -n "$ext" ]] && ! ws_wants_internal "$ws"; then
+            want="$ext"
+        else
+            want="$WS_INTERNAL_MATCH"
+        fi
+        # Already where it belongs. Skipping also keeps ws_move_one from trying a
+        # direction that would push it off a display it is correctly on.
+        [[ "$name" == *"$want"* ]] && continue
+        rc=0; ws_move_one "$ctl" "$ws" "$want" || rc=$?
+        if (( rc == 2 )) && ws_unstick "$ctl" "$ws" "$name"; then
+            rc=0; ws_move_one "$ctl" "$ws" "$want" || rc=$?
+        fi
+        case "$rc" in
+            0) ws_moved="$ws_moved $ws" ;;
+            2) ws_stuck="$ws_stuck $ws" ;;
+            *) ws_failed="$ws_failed $ws" ;;
+        esac
+    done < <(ws_map "$ctl")
+    return 0
+}
+
+tidy() { printf '%s\n' $1 | awk 'NF' | sort -n -u | paste -sd' ' -; }
+
 workspaces_apply() {
-    local state="$1" ctl want src ws name rc prev moved="" stuck="" failed=""
+    local state="$1" quiet="${2:-}" ctl pass
     (( DOCK_MOVE_WORKSPACES )) || return 0
     if ! ctl="$(find_omniwmctl)"; then
         note "workspaces: omniwmctl not found, skipped"
@@ -179,55 +295,23 @@ workspaces_apply() {
     fi
     "$ctl" ping >/dev/null 2>&1 || { note "workspaces: OmniWM not responding, skipped"; return 0; }
 
-    if [[ "$state" == "undocked" ]]; then
-        # Everything not already on the built-in goes there.
-        want="$WS_INTERNAL_MATCH"
-        while IFS=$'\t' read -r ws name; do
-            [[ -n "$ws" ]] || continue
-            [[ "$name" == *"$want"* ]] && continue
-            rc=0; ws_move_one "$ctl" "$ws" "$want" || rc=$?
-            case "$rc" in
-                0) moved="$moved $ws" ;;
-                2) stuck="$stuck $ws" ;;
-                *) failed="$failed $ws" ;;
-            esac
-        done < <(ws_map "$ctl")
-        # Union with whatever a previous dock could not put back. Overwriting
-        # loses that list, and those workspaces then stay on the built-in for
-        # ever because nothing remembers they belong on the Dell.
-        if [[ -n "$moved" ]]; then
-            prev=""
-            [[ -f "$STATE_DIR/moved-workspaces" ]] && prev="$(cat "$STATE_DIR/moved-workspaces")"
-            printf '%s\n' $prev $moved | awk 'NF' | sort -n -u | paste -sd' ' - \
-                > "$STATE_DIR/moved-workspaces"
-        fi
-    else
-        # Put back exactly what we moved, so a workspace that always lived on the
-        # built-in is not dragged onto the Dell by accident.
-        [[ -f "$STATE_DIR/moved-workspaces" ]] || { note "workspaces: nothing recorded to restore"; return 0; }
-        src="$(external_display "$ctl" "$WS_INTERNAL_MATCH")"
-        if [[ -z "$src" ]]; then note "workspaces: no external display present, skipped"; return 0; fi
-        for ws in $(cat "$STATE_DIR/moved-workspaces"); do
-            rc=0; ws_move_one "$ctl" "$ws" "$src" || rc=$?
-            case "$rc" in
-                0) moved="$moved $ws" ;;
-                2) stuck="$stuck $ws" ;;
-                *) failed="$failed $ws" ;;
-            esac
-        done
-        # Keep the ones that did not make it, so the next dock retries them.
-        if [[ -n "$stuck$failed" ]]; then
-            printf '%s\n' $stuck $failed | awk 'NF' | sort -n -u | paste -sd' ' - \
-                > "$STATE_DIR/moved-workspaces"
-        else
-            rm -f "$STATE_DIR/moved-workspaces"
-        fi
-    fi
+    ws_moved=""; ws_stuck=""; ws_failed=""
+    for pass in 1 2; do
+        ws_borrowed=""
+        ws_sweep "$ctl" "$state"
+        # If a sweep had to park an empty workspace on a panel to free the one
+        # stuck there, run the comparison again to send it home. Nothing is
+        # remembered between sweeps -- the second one just sees it out of place.
+        [[ -n "$ws_borrowed" ]] || break
+    done
 
-    [[ -n "$moved" ]]  && note "workspaces moved:${moved}"
-    [[ -n "$stuck" ]]  && note "workspaces left put (native fullscreen):${stuck}"
-    [[ -n "$failed" ]] && note "workspaces could not move:${failed}"
-    [[ -z "$moved$stuck$failed" ]] && note "workspaces: nothing to move"
+    # Nothing is recorded any more; drop a file an older version may have left.
+    rm -f "$STATE_DIR/moved-workspaces"
+
+    [[ -n "$ws_moved" ]]  && note "workspaces moved: $(tidy "$ws_moved")"
+    [[ -n "$ws_stuck" ]]  && note "workspaces left put (shown, with windows, nothing to borrow): $(tidy "$ws_stuck")"
+    [[ -n "$ws_failed" ]] && note "workspaces could not move: $(tidy "$ws_failed")"
+    [[ -z "$ws_moved$ws_stuck$ws_failed" && -z "$quiet" ]] && note "workspaces: already placed"
     return 0
 }
 
@@ -258,6 +342,7 @@ apply_state() {
     mkdir -p "$STATE_DIR"
     workspaces_apply "$state"
     printf '%s\n' "$state" > "$STATE_FILE"
+    display_signature > "$STATE_DIR/displays"
 }
 
 current_font_size() {
@@ -271,12 +356,24 @@ case "$cmd" in
         say "detected:   $detected"
         say "last applied: $( [[ -f "$STATE_FILE" ]] && cat "$STATE_FILE" || say '(never)' )"
         say "alacritty size: $(current_font_size)"
+        say "displays:   $(display_signature)"
         ;;
     apply)
         detected="$(detect_state)"
         last="$( [[ -f "$STATE_FILE" ]] && cat "$STATE_FILE" || true )"
-        if [[ "${2:-}" == "--force" || "$detected" != "$last" ]]; then
+        sig="$(display_signature)"
+        last_sig="$( [[ -f "$STATE_DIR/displays" ]] && cat "$STATE_DIR/displays" || true )"
+        if [[ "${2:-}" == "--force" || "$detected" != "$last" || "$sig" != "$last_sig" ]]; then
             apply_state "$detected"
+        else
+            # Placement drifts without either signal moving: OmniWM re-places
+            # workspaces on whatever is "main" of its own accord, and merely
+            # reloading settings.toml is enough to trigger it. Observed putting
+            # every workspace on the Dell while undocked, which is the state all
+            # of this exists to prevent. The reconcile is idempotent and costs
+            # one query when nothing is wrong, so just run it every poll; it is
+            # quiet unless it actually moves something.
+            workspaces_apply "$detected" quiet
         fi
         ;;
     dock)   apply_state docked ;;

@@ -42,22 +42,44 @@ the generated `~/.config/alacritty/dock.toml` that `alacritty.toml` imports. The
 ultrawide is 109 PPI at native 1x, so the app has to carry the readability
 itself.
 
-It also moves OmniWM workspaces off the Dell on the way out and back on the way
-in. Undocking does not unplug the Dell — the cable stays and only its input
-changes — so macOS keeps it as a live display, and a workspace parked there
-becomes invisible rather than gone. Only the workspaces that were actually
-moved are put back, recorded in `~/.local/state/dock/moved-workspaces`, so a
-workspace that always lived on the built-in is not dragged onto the Dell.
+It also places OmniWM workspaces. Undocking does not unplug the Dell — the cable
+stays and only its input changes — so macOS keeps it as a live display, and a
+workspace parked there becomes invisible rather than gone. OmniWM cannot see any
+of that, so `dockctl` owns placement outright and `omniwm/settings.toml` leaves
+every workspace on `main` rather than pinning it to a display.
 
-`DOCK_MOVE_WORKSPACES=0` turns that off; `WS_INTERNAL_MATCH` is the substring
-that identifies the built-in panel in OmniWM's display names. Two wrinkles worth
-knowing: `omniwmctl workspace move-to-monitor` takes a *direction*, not a
-display, and the usable direction does not follow the frame geometry, so it is
-discovered by trying; and `--force` is needed because `omniwm/settings.toml`
-pins every workspace to a `specificDisplay`.
+The wanted layout is declared, not remembered: docked, `WS_INTERNAL_WORKSPACES`
+(10) stays on the built-in and everything else goes to the external panel;
+undocked they all come home, because it is the only panel you can see. Each run
+compares the live placement against that and moves only what is wrong, so it is
+idempotent and self-correcting — a run that is already right does nothing, and a
+run after something drifted puts it back. There is no record file to go stale.
 
-A natively-fullscreened window is tied to its own macOS Space on one display and
-no direction will move its workspace, so those are reported and left alone.
+Placement is reconciled on every poll, not only when the dock state or the set
+of attached displays changes. OmniWM re-places workspaces onto whatever is
+`main` of its own accord — reloading `settings.toml` is enough to set it off —
+and neither of those signals moves when it does. Because the reconcile compares
+against the wanted layout it costs one query when nothing is wrong, and it stays
+quiet in the log unless it actually moves something. `dockctl status` prints the
+display signature.
+
+The flip side: moving a workspace to another display by hand gets undone within
+five seconds. That is what owning placement means — set `DOCK_MOVE_WORKSPACES=0`
+if you want to place things yourself.
+
+`DOCK_MOVE_WORKSPACES=0` turns it off; `WS_INTERNAL_MATCH` is the substring that
+identifies the built-in panel in OmniWM's display names. One wrinkle:
+`omniwmctl workspace move-to-monitor` takes a *direction*, not a display, and the
+usable direction follows neither the frame geometry nor the routing arrangement,
+so it is discovered by trying and cached per target.
+
+OmniWM refuses to move a workspace that is currently *shown* on its panel and
+has windows on it — an empty one moves while visible, and the same workspace
+moves once something else is shown in its place. So on that refusal `dockctl`
+shows another workspace on that panel and retries. If it is the only workspace
+there, an empty one is borrowed from elsewhere to take its place and a second
+sweep sends the borrowed one home; empty workspaces are the safe thing to
+borrow, since being empty they can be moved even while shown.
 
 Two things this deliberately does **not** do, both decided by measuring:
 
