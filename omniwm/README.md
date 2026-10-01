@@ -31,6 +31,8 @@ untouched — same convention the AeroSpace module used.
 | option + shift + 1–9 | Move the window to a workspace and follow it |
 | option + tab / option + shift + tab | Next / previous workspace |
 | control + option + tab | Jump back to the last workspace |
+| option + s | Toggle scratchpad 1 |
+| option + shift + s | Assign/unassign the focused window to scratchpad 1 |
 | option + w | Close window |
 | option + f | Fullscreen |
 | option + t | Toggle floating |
@@ -53,6 +55,18 @@ opens a new Alacritty window, **Option+Cmd+Return** opens one running tmux,
 and **Option+W** sends Cmd+W instead of the WM's own close command when
 Alacritty is frontmost, since Alacritty has no title bar for OmniWM to press
 a close button on.
+
+Karabiner intercepts at the HID level, so a combo it claims never reaches
+OmniWM. Two of OmniWM's defaults sit on combos the `karabiner` module now
+takes, and are left `Unassigned` here rather than bound on both sides:
+
+| Combo | Karabiner uses it for | OmniWM command given up |
+|-------|-----------------------|-------------------------|
+| option + shift + b | A new browser window | `balanceSizes` |
+| option + , | Dismiss the newest notification | `cycleSizeBackward` |
+
+`cycleSizeForward` keeps **option + .**, so cycling still works, one way
+round.
 
 ## Known limitations (not fixable from config)
 
