@@ -8,7 +8,7 @@ schemaVersion = 3
 
 [appearance]
 mode = "dark"
-tabRailAppIcons = false
+tabRailAppIcons = true
 
 [borders]
 enabled = true
@@ -44,7 +44,7 @@ moveMouseToFocusedWindow = true
 raiseOnMouseFocus = false
 
 [gaps]
-fullscreenUsesOuterGaps = false
+fullscreenUsesOuterGaps = true
 size = 6.0
 
 [gaps.outer]
@@ -60,7 +60,7 @@ hotkeysEnabled = true
 hyperKeyModifiers = "Control+Option+Shift+Command"
 ipcEnabled = true
 preventSleepEnabled = false
-systemHyperTrigger = "CapsLock"
+systemHyperTrigger = "Caps Lock"
 updateChecksEnabled = true
 
 [gestures]
@@ -103,6 +103,9 @@ singleWindowFit = "fill"
 visibleContainerCount = 2
 
 [overview]
+invertScrollDirection = false
+matchFocusBorder = true
+mouseScrollSpeed = 1.0
 zoom = 1.0
 
 [overview.backdrop]
@@ -144,8 +147,22 @@ position = "center"
 widthPercent = 50.0
 
 [routing]
-arrangements = []
-mode = "macOS"
+mode = "custom"
+
+[[routing.arrangements]]
+id = "FD1EB5C1-0B69-41C1-8312-8C0E3D67221B"
+
+[[routing.arrangements.monitors]]
+gridColumn = 1
+gridRow = 0
+monitorDisplayUUID = "BB1AD357-346B-440B-B325-BBDA76A066EC"
+monitorName = "DELL S3422DWG"
+
+[[routing.arrangements.monitors]]
+gridColumn = 0
+gridRow = 0
+monitorDisplayUUID = "37D8832A-2D66-02CA-B9F7-8F30A301B230"
+monitorName = "Built-in Retina Display"
 
 [scratchpads]
 
@@ -153,21 +170,21 @@ mode = "macOS"
 
 [statusBar]
 showAppNames = false
-showWorkspaceName = false
-useWorkspaceId = false
+showWorkspaceName = true
+useWorkspaceId = true
 
 [workspaceBar]
 backgroundOpacity = 0.1
-deduplicateAppIcons = false
+deduplicateAppIcons = true
 enabled = true
 excludedBundleIDs = []
 height = 24.0
-hideEmptyWorkspaces = false
-hideInNativeFullscreen = false
+hideEmptyWorkspaces = true
+hideInNativeFullscreen = true
 notchActiveZoneWidth = 180.0
-notchMode = "moveBelowMenuBar"
-position = "belowMenuBar"
-reserveLayoutSpace = true
+notchMode = "off"
+position = "overlappingMenuBar"
+reserveLayoutSpace = false
 revealHoldMilliseconds = 200.0
 revealModifier = "off"
 showAccentHighlights = true
@@ -184,11 +201,11 @@ yOffset = 0.0
 [workspaceBar.iconOverrides]
 
 [[hotkeys]]
-binding = "Unassigned"
+binding = "Option+S"
 id = "toggleScratchpad.1"
 
 [[hotkeys]]
-binding = "Unassigned"
+binding = "Option+Shift+S"
 id = "assignFocusedWindowToScratchpad.1"
 
 [[hotkeys]]
@@ -772,7 +789,7 @@ binding = "Option+Period"
 id = "cycleSizeForward"
 
 [[hotkeys]]
-binding = "Option+Comma"
+binding = "Unassigned"
 id = "cycleSizeBackward"
 
 [[hotkeys]]
@@ -828,7 +845,7 @@ binding = "Option+Shift+Equal"
 id = "setWindowSecondarySpan.increase10Percent"
 
 [[hotkeys]]
-binding = "Option+Shift+B"
+binding = "Unassigned"
 id = "balanceSizes"
 
 [[hotkeys]]
@@ -941,7 +958,11 @@ layoutType = "dwindle"
 name = "1"
 
 [workspaces.monitorAssignment]
-type = "main"
+type = "specificDisplay"
+
+[workspaces.monitorAssignment.output]
+displayUUID = "BB1AD357-346B-440B-B325-BBDA76A066EC"
+name = "DELL S3422DWG"
 
 [[workspaces]]
 id = "454CECD4-5E9D-4ED1-95D7-979D48817F5F"
@@ -949,7 +970,11 @@ layoutType = "dwindle"
 name = "2"
 
 [workspaces.monitorAssignment]
-type = "main"
+type = "specificDisplay"
+
+[workspaces.monitorAssignment.output]
+displayUUID = "BB1AD357-346B-440B-B325-BBDA76A066EC"
+name = "DELL S3422DWG"
 
 [[workspaces]]
 id = "BEB842B5-E894-4791-9FD1-397C3CDD3538"
@@ -957,7 +982,11 @@ layoutType = "dwindle"
 name = "3"
 
 [workspaces.monitorAssignment]
-type = "main"
+type = "specificDisplay"
+
+[workspaces.monitorAssignment.output]
+displayUUID = "BB1AD357-346B-440B-B325-BBDA76A066EC"
+name = "DELL S3422DWG"
 
 [[workspaces]]
 id = "248AA883-2261-4D45-943C-79C0E46A232B"
@@ -965,7 +994,11 @@ layoutType = "dwindle"
 name = "4"
 
 [workspaces.monitorAssignment]
-type = "main"
+type = "specificDisplay"
+
+[workspaces.monitorAssignment.output]
+displayUUID = "BB1AD357-346B-440B-B325-BBDA76A066EC"
+name = "DELL S3422DWG"
 
 [[workspaces]]
 id = "8B8C45D6-CE9E-41D9-BD50-BE4989D5E3DE"
@@ -973,7 +1006,11 @@ layoutType = "dwindle"
 name = "5"
 
 [workspaces.monitorAssignment]
-type = "main"
+type = "specificDisplay"
+
+[workspaces.monitorAssignment.output]
+displayUUID = "BB1AD357-346B-440B-B325-BBDA76A066EC"
+name = "DELL S3422DWG"
 
 [[workspaces]]
 id = "5953F2BF-A378-4266-91B2-287174C4FA4D"
@@ -981,7 +1018,11 @@ layoutType = "dwindle"
 name = "6"
 
 [workspaces.monitorAssignment]
-type = "main"
+type = "specificDisplay"
+
+[workspaces.monitorAssignment.output]
+displayUUID = "BB1AD357-346B-440B-B325-BBDA76A066EC"
+name = "DELL S3422DWG"
 
 [[workspaces]]
 id = "A7D5E104-6985-4516-8ED5-07F144F2A33D"
@@ -989,7 +1030,11 @@ layoutType = "dwindle"
 name = "7"
 
 [workspaces.monitorAssignment]
-type = "main"
+type = "specificDisplay"
+
+[workspaces.monitorAssignment.output]
+displayUUID = "BB1AD357-346B-440B-B325-BBDA76A066EC"
+name = "DELL S3422DWG"
 
 [[workspaces]]
 id = "0E18F6B0-345A-4078-8B21-33641F07A861"
@@ -997,7 +1042,11 @@ layoutType = "dwindle"
 name = "8"
 
 [workspaces.monitorAssignment]
-type = "main"
+type = "specificDisplay"
+
+[workspaces.monitorAssignment.output]
+displayUUID = "BB1AD357-346B-440B-B325-BBDA76A066EC"
+name = "DELL S3422DWG"
 
 [[workspaces]]
 id = "8D4D711C-2B2F-4FEC-86BF-FA952037738A"
@@ -1005,4 +1054,20 @@ layoutType = "dwindle"
 name = "9"
 
 [workspaces.monitorAssignment]
-type = "main"
+type = "specificDisplay"
+
+[workspaces.monitorAssignment.output]
+displayUUID = "BB1AD357-346B-440B-B325-BBDA76A066EC"
+name = "DELL S3422DWG"
+
+[[workspaces]]
+id = "9809CAFF-33BD-49B3-9BE0-AA5AF2AAFF80"
+layoutType = "default"
+name = "10"
+
+[workspaces.monitorAssignment]
+type = "specificDisplay"
+
+[workspaces.monitorAssignment.output]
+displayUUID = "37D8832A-2D66-02CA-B9F7-8F30A301B230"
+name = "Built-in Retina Display"
