@@ -2,7 +2,7 @@
 
 The base layer for a Mac that mostly lives in the terminal. Key remaps and
 window management are separate modules: [`karabiner`](../karabiner/README.md)
-and [`aerospace`](../aerospace/README.md).
+and [`omniwm`](../omniwm/README.md).
 
 ```bash
 brew install bash                       # the installers need bash 4+; macOS ships 3.2

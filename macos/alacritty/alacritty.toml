@@ -20,7 +20,7 @@ size = 14
 [window]
 padding.x = 14
 padding.y = 14
-# No title bar: AeroSpace places and sizes the windows.
+# No title bar: OmniWM places and sizes the windows.
 decorations = "None"
 # On a PC keyboard macOS maps Alt to Option; make it a real Alt/Meta in the
 # terminal so herdr's alt+... keys, zsh word motions and nvim <M-...> work as

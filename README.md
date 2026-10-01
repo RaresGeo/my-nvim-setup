@@ -64,8 +64,8 @@ mv ~/.config/nvim ~/.config/dotfiles
 | `herdr` | `~/.config/herdr/config.toml` | Omarchy (ships with it) or macOS (Homebrew) |
 | `omarchy` | Hyprland overrides, theme hooks | Omarchy |
 | [`macos`](macos/README.md) | Alacritty, theme snapshot, CLI tools, system defaults | macOS |
-| [`karabiner`](karabiner/README.md) | Built-in keyboard remap, Cmd+Enter / Cmd+Shift+B launchers | macOS |
-| [`aerospace`](aerospace/README.md) | Tiling window manager, minimal config | macOS |
+| [`karabiner`](karabiner/README.md) | Built-in keyboard remap, terminal launchers, Alacritty close fix | macOS |
+| [`omniwm`](omniwm/README.md) | Tiling window manager, dwindle layout | macOS |
 
 ## Omarchy
 
@@ -158,10 +158,10 @@ left out, for the same reason.
 │   ├── builtin-keyboard.json
 │   ├── rules/*.json        # -> ~/.config/karabiner/assets/complex_modifications/
 │   └── bin/open-browser    # -> ~/.local/bin/open-browser
-└── aerospace/
+└── omniwm/
     ├── install.sh
-    ├── aerospace.toml      # -> ~/.config/aerospace/aerospace.toml
-    └── bin/                # -> ~/.local/bin/
+    ├── settings.toml           # -> ~/.config/omniwm/settings.toml
+    └── empty-workspace-focus   # -> ~/.local/bin/omniwm-empty-workspace-focus
 ```
 
 ## Adding a module
