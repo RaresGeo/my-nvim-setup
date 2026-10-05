@@ -14,6 +14,7 @@
 #   dockctl status          print the detected state and what is currently set
 #   dockctl apply           apply, but only if the state changed since last run
 #   dockctl apply --force   apply unconditionally
+#   dockctl watch           apply in a loop; this is what the launchd agent runs
 #   dockctl dock            force docked  (manual override, ignores hardware)
 #   dockctl undock          force undocked
 #   dockctl probe           dump what the detector sees (use this at the desk)
@@ -376,6 +377,33 @@ case "$cmd" in
             workspaces_apply "$detected" quiet
         fi
         ;;
+    watch)
+        # Resident loop, because launchd's StartInterval could not be trusted to
+        # keep this alive. A 5s interval is below launchd's 10s "minimum runtime",
+        # so every poll looked like a process exiting too soon -- launchd throttles
+        # those, and a wake from sleep fires all the intervals missed while asleep
+        # at once. That burst is what eventually wedged the job: `launchctl print`
+        # showed `properties = ... penalty box`, `last exit code = 78: EX_CONFIG`
+        # and `job state = spawn failed`, with the run count frozen, and it stayed
+        # that way until the agent was booted out and back in by hand.
+        #
+        # It failed at the worst possible moment every time: undocking means
+        # closing the lid, the lid is a clamshell sleep, and the wake from that
+        # sleep is exactly the event that killed the watcher -- so the undock it
+        # was supposed to apply was the one it was no longer alive to see.
+        # pmset put the death at the 14:18:51 lid wake on 2026-10-05, three
+        # sleep/wake cycles before anyone noticed.
+        #
+        # Staying resident removes the whole class of failure: one process, no
+        # respawns to throttle, and `sleep` simply resumes when the Mac wakes.
+        # Re-exec rather than calling apply inline so a transient failure inside
+        # one poll cannot take the loop down with it.
+        interval="${DOCK_WATCH_INTERVAL:-5}"
+        while :; do
+            "$0" apply || true
+            sleep "$interval"
+        done
+        ;;
     dock)   apply_state docked ;;
     undock) apply_state undocked ;;
     probe)
@@ -400,5 +428,5 @@ case "$cmd" in
             END { flush() }
         '
         ;;
-    *) sed -n '2,30p' "$0" | sed 's|^# \?||'; exit 1 ;;
+    *) sed -n '2,20p' "$0" | sed 's|^# \?||'; exit 1 ;;
 esac

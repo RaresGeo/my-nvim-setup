@@ -24,7 +24,7 @@ brew install bash                       # the installers need bash 4+; macOS shi
 | `Brewfile` | bash, Nerd Font, CLI tools (fzf, zoxide, eza, bat, btop, gh, mise, herdr, ...) |
 | `alacritty/alacritty.toml` | `~/.config/alacritty/alacritty.toml`; imports `dock.toml` for the font size, so the size is not set here |
 | `dock/dockctl` | `~/.local/bin/dockctl`, the docked/undocked switch (see below) |
-| `dock/com.dotfiles.dock-watch.plist.tpl` | Rendered to `~/Library/LaunchAgents/com.dotfiles.dock-watch.plist`, which runs `dockctl apply` every 5s |
+| `dock/com.dotfiles.dock-watch.plist.tpl` | Rendered to `~/Library/LaunchAgents/com.dotfiles.dock-watch.plist`, which runs `dockctl watch` — one resident process polling every 5s (the loop is in the script, not a `StartInterval`, so launchd has no respawns to throttle) |
 | `theme/kanagawa/` | `~/.local/state/omarchy/current/theme`, the path nvim, zsh and Alacritty read colors from |
 | `defaults.sh` | Fast key repeat, no press-and-hold popup, screenshots in `~/Pictures/Screenshots`, quittable Finder |
 | `build-alacritty.sh` | Builds the latest Alacritty release into `~/Applications` (Homebrew no longer ships it) |
