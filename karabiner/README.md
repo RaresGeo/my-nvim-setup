@@ -22,6 +22,7 @@ offers to add it the first time Option+, is pressed.
 | `rules/notifications.json` | **Option+,**: dismisses the newest notification banner. |
 | `rules/omniwm.json` | **Option+0** focuses OmniWM workspace 10, **Option+Shift+0** moves the window there and follows it. OmniWM's own hotkeys only go up to nine workspaces, so these call `omniwmctl`. |
 | `rules/clipboard.json` | **Option+C** and **Option+V** copy and paste in every app, so both sit on Option like the rest of this setup. **Option+Ctrl+V** opens Raycast's clipboard history. |
+| `rules/microphone.json` | **Option+B** mutes and unmutes the microphone, through the [`audio`](../audio/README.md) module's `micctl`. It sets CoreAudio's mute flag on the default input, which here is the chain's sink, so it silences exactly what every app reads. The cost is `backward-word` on Alt+B in the shell, which is still on Ctrl+Left; `audio/README.md` has the full accounting. |
 | `bin/dismiss-notification` | Presses the banner's own close action through NotificationCenter's accessibility tree; macOS has no API for it. |
 | `bin/open-browser` | Works out the default browser and opens a new window the way that browser needs (Chromium, Firefox-based, Safari) |
 
@@ -93,8 +94,9 @@ module, so Command is left entirely to macOS apps — Cmd+Shift+B in particular
 goes back to toggling the browser's own bookmarks bar.
 
 Karabiner intercepts at the HID level, so a combo it claims never reaches
-OmniWM. The two these launchers take, Option+Shift+B and Option+, are therefore
-left unassigned in `omniwm/settings.toml` rather than bound on both sides.
+OmniWM. The three claimed here, Option+Shift+B, Option+, and Option+B, are
+therefore left unassigned in `omniwm/settings.toml` rather than bound on both
+sides.
 
 `rules/omniwm.json` goes the other way and drives OmniWM through its CLI.
 OmniWM writes its whole hotkey roster into `settings.toml`, and that roster

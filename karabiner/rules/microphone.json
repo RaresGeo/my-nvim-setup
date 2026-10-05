@@ -1,0 +1,27 @@
+{
+  "title": "Microphone (dotfiles: karabiner/rules/microphone.json)",
+  "rules": [
+    {
+      "description": "Option+B: mute or unmute the microphone",
+      "manipulators": [
+        {
+          "type": "basic",
+          "from": {
+            "key_code": "b",
+            "modifiers": {
+              "mandatory": [
+                "option"
+              ],
+              "optional": []
+            }
+          },
+          "to": [
+            {
+              "shell_command": "\"$HOME/.local/bin/micctl\" mute"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
