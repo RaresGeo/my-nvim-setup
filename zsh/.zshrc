@@ -239,3 +239,10 @@ alias sshhp='ssh daniel@$(cat ~/.ssh/homelab_hp_ip)'
 passman() { 
     /.topsecret/passman.py "$@"
 }
+
+# Per-device overrides. Anything this machine needs that the repo should not
+# carry — work credentials, host-only paths, one-off aliases. Untracked by git;
+# resolved next to this file so it follows the checkout rather than a fixed path.
+local_zsh="${${(%):-%N}:A:h}/local.zsh"
+[[ -r "$local_zsh" ]] && source "$local_zsh"
+unset local_zsh
