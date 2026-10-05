@@ -1,0 +1,13 @@
+[Unit]
+Description=Keep Sound BlasterX G6 microphone routing, sidetone and lamp correct
+After=wireplumber.service
+PartOf=graphical-session.target
+
+[Service]
+Type=simple
+ExecStart=%h/.local/bin/g6-mic-guard
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=default.target

@@ -37,6 +37,29 @@ for config in "$MODULE_DIR"/hypr/*.lua; do
     link "omarchy/hypr/$(basename "$config")" "$HOME/.config/hypr/$(basename "$config")"
 done
 
+# Helper scripts. The Sound BlasterX G6 is shared with the MacBook over a USB
+# switch, and its capture routing, sidetone and lamp all need asserting on this
+# side -- see the comments in bin/g6-mic-guard for why none of it can be assumed.
+log "Linking helper scripts..."
+mkdir -p "$HOME/.local/bin"
+for helper in "$MODULE_DIR"/bin/*; do
+    [[ -f "$helper" ]] || continue
+    link "omarchy/bin/$(basename "$helper")" "$HOME/.local/bin/$(basename "$helper")"
+done
+
+# The guard runs as a user unit: it only needs the mixer and the HID node, both
+# of which the desktop user already reaches, so there is nothing here that wants
+# root. Linked rather than copied so an edit in the repo takes effect on reload.
+log "Installing the G6 guard service..."
+mkdir -p "$HOME/.config/systemd/user"
+link "omarchy/systemd/g6-mic-guard.service" \
+    "$HOME/.config/systemd/user/g6-mic-guard.service"
+if command -v systemctl &>/dev/null; then
+    systemctl --user daemon-reload
+    systemctl --user enable --now g6-mic-guard.service 2>/dev/null \
+        || warn "could not enable g6-mic-guard.service"
+fi
+
 # Theme hooks. The .d directory is additive, so this sits alongside anything
 # else (omarchy's own samples included) without overwriting it.
 log "Installing theme-set hooks..."

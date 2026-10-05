@@ -18,7 +18,10 @@ hl.unbind("SUPER + SHIFT + W")
 
 -- Extra app launches not covered by defaults
 o.bind("SUPER + SHIFT + T", "Activity", { tui = "btop" })
-o.bind("SUPER + B", "Microphone mute", "wpctl set-mute @DEFAULT_AUDIO_SOURCE@ toggle")
+-- Through g6-mute rather than wpctl directly, so the Sound BlasterX G6's lamp
+-- follows the mute: white live, red muted, the same scheme the Mac uses. It
+-- still falls through to wpctl for the mute itself.
+o.bind("SUPER + B", "Microphone mute", "g6-mute")
 
 -- Custom region screenshot
 o.bind("CTRL + ALT + S", "Screenshot of region", "omarchy-capture-screenshot smart")
