@@ -1,10 +1,15 @@
 appRules = []
-monitorBarOverrides = []
 monitorDwindleOverrides = []
 monitorGapOverrides = []
 monitorNiriOverrides = []
 monitorOrientationOverrides = []
 schemaVersion = 3
+
+[[monitorBarOverrides]]
+id = "7A1F0C2E-9B4D-4E61-A3C8-5D2F6B8E1049"
+monitorDisplayUUID = "BB1AD357-346B-440B-B325-BBDA76A066EC"
+monitorName = "DELL S3422DWG"
+reserveLayoutSpace = false
 
 [appearance]
 mode = "dark"
