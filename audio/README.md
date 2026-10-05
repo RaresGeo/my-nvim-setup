@@ -291,6 +291,67 @@ when it changes, because sox only notices when the device it already holds goes
 away. Without that, plugging in a headset would leave the chain on the old mic
 until something else restarted it.
 
+## The input source resets itself
+
+A card with several physical inputs behind one USB interface exposes which one it
+is listening on as a CoreAudio *data source* — macOS shows it under System
+Settings > Sound > Input. The G6 has four:
+
+```
+  Line In
+* External Mic      <- the front jack the PC38X mic plugs into
+  S/PDIF In
+  What U Hear       <- a loopback of system output, not a microphone
+```
+
+That selection is a **USB-audio-class control, so it is volatile**: it resets to
+the device's default on every re-enumeration. Handing the card to another machine
+over the USB switch and taking it back is a re-enumeration, and it comes back on
+**Line In** — a jack with nothing in it. The chain then records a flat −90 dBFS,
+one bit, and relays it faithfully. Everything reports healthy, because everything
+*is* healthy: the device is attached, unmuted, at volume, the agents are up. It
+is simply listening to the wrong hole.
+
+The Linux side has the same problem for a different reason — PipeWire's generic
+profile re-asserts `PCM Capture Source` = Line In every time it configures the
+card — and solves it with a guard that watches mixer events (`g6-mic-guard`).
+
+Here, `MIC_INPUT_SOURCE` in `local.conf` does it:
+
+```bash
+MIC_INPUT_SOURCE="External Mic"
+```
+
+The chain supervisor re-asserts it whenever it has drifted, and `micctl status`
+shows what the device is on, flags a source that cannot carry a mic, and lists
+the alternatives:
+
+```
+  mic            Sound BlasterX G6
+  input source   Line In  [NOT A MIC -- records silence]  (pinned to 'External Mic')
+                 * Line In
+                   External Mic
+                   ...
+```
+
+It has to be **polled, not set once at startup**. Setting it before the chain
+opens the device does not survive: CoreAudio re-asserts its own idea of the
+source when it configures the device for capture. Measured — the write returns
+`noErr`, reads back correct, and is `Line In` again 400 ms later. Asserted from
+the poll loop once sox is up it holds, and the change reaches the running
+capture, so sox does not need restarting around it.
+
+macOS ships no CLI that can set a data source (`SwitchAudioSource` does devices
+and the mute flag, `system_profiler` can only read it), so `install.sh` builds
+`src/input-source.c` to `~/.local/libexec/micctl-input-source` — one clang call,
+two system frameworks, no third-party dependency. Without it `status` still
+reports the wrong input, it just cannot correct it.
+
+**The CrystalVoice fixes are not affected by any of this.** Those are HID
+settings and they persist in the device's own firmware, so they carry to any
+host — see `~/personal/sound-blasterx-g6-linux.md` on the desk machine. Only the
+audio-class controls (source selection, mixer volumes, sidetone) are volatile.
+
 ## Troubleshooting
 
 ```bash

@@ -54,6 +54,27 @@ fi
 log "Installing micctl..."
 link audio/bin/micctl "$HOME/.local/bin/micctl"
 
+# A device with several physical inputs behind one USB interface -- the G6 has
+# four -- exposes which one it is listening on as a CoreAudio "data source", and
+# that selection is volatile: it resets on every re-enumeration, so a USB switch
+# hands the card back parked on Line In with the mic reading an empty jack.
+# Nothing in macOS puts it back and no stock CLI can set it, so build the small
+# helper that can. Optional: without it micctl still reports the wrong input in
+# `status`, it just cannot correct it.
+if command -v clang >/dev/null 2>&1; then
+    log "Building the input-source helper..."
+    mkdir -p "$HOME/.local/libexec"
+    if clang -O2 -Wall -framework CoreAudio -framework CoreFoundation \
+        -o "$HOME/.local/libexec/micctl-input-source" "$MODULE_DIR/src/input-source.c"; then
+        log "  -> ~/.local/libexec/micctl-input-source"
+    else
+        warn "input-source helper did not build; micctl will report the input source but not correct it."
+    fi
+else
+    warn "clang not found (install the Xcode command line tools), so the input-source"
+    warn "helper was not built. micctl will report the input source but not correct it."
+fi
+
 mkdir -p "$HOME/.config/audio" "$HOME/.local/state/audio"
 
 # Device names and gate settings are the one genuinely per machine part of
@@ -72,6 +93,13 @@ if [[ ! -e "$conf" ]]; then
 
 # Used when the default input cannot be read, or has been pointed at the sink:
 # MIC_FALLBACK="MacBook Pro Microphone"
+
+# Which physical input the mic device listens on, for a card with several behind
+# one USB interface. The selection is volatile -- it resets whenever the device
+# re-enumerates, so a USB switch hands a G6 back on "Line In", an empty jack,
+# and the mic goes silent. Set this and micctl puts it back on every restart.
+# `micctl status` lists what the device offers.
+# MIC_INPUT_SOURCE="External Mic"
 
 # Pin the monitoring output instead of following the system default output:
 # MONITOR_DEVICE="External Headphones"

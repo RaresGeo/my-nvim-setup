@@ -62,6 +62,21 @@ SINK_DEVICE="${SINK_DEVICE:-BlackHole 2ch}"
 MIC_DEVICE="${MIC_DEVICE:-}"
 MIC_FALLBACK="${MIC_FALLBACK:-MacBook Pro Microphone}"
 
+# Which physical input the mic device should be listening on, for a device that
+# has more than one behind a single USB interface. Empty means "do not manage
+# it", which is right for anything with one input.
+#
+# This is not a nicety. The selection is a USB-audio-class control, so it is
+# volatile: it resets to the device's own default on every re-enumeration. Hand
+# a Sound BlasterX G6 to another machine over a USB switch and take it back and
+# it returns parked on "Line In" -- an empty jack -- so the chain records
+# digital silence and there is nothing to hear yourself with. Nothing in macOS
+# puts it back. Set this to "External Mic" for a G6 with a headset in the front
+# jack; `micctl status` lists what the device offers.
+MIC_INPUT_SOURCE="${MIC_INPUT_SOURCE:-}"
+# Built by ../install.sh; macOS ships no CLI that can set a data source.
+INPUT_SOURCE_HELPER="${MIC_INPUT_SOURCE_HELPER:-$HOME/.local/libexec/micctl-input-source}"
+
 # Left empty, monitoring follows the default output.
 MONITOR_DEVICE="${MONITOR_DEVICE:-}"
 MONITOR_GAIN="${MONITOR_GAIN:-0}"
@@ -331,9 +346,11 @@ reap_stray_sox() {
 # away, so switching the *default* device would otherwise leave the chain on
 # the old mic until something else restarted it.
 #
-# $1 label, $2 resolver function, $3 veto function (or ":"), $4 runner function
+# $1 label, $2 resolver function, $3 veto function (or ":"), $4 runner function,
+# $5 keep function (or ":") -- re-asserted every poll while the runner is up,
+# for device state the driver undoes behind our back.
 supervise() {
-    local label="$1" resolve="$2" veto="$3" runner="$4"
+    local label="$1" resolve="$2" veto="$3" runner="$4" keep="${5:-:}"
     local last_complaint="" fast_failures=0
 
     mkdir -p "$STATE_DIR"
@@ -380,6 +397,7 @@ supervise() {
 
         while kill -0 "$pid" 2>/dev/null; do
             sleep "$SUPERVISE_POLL"
+            [[ "$keep" != ":" ]] && "$keep" "$device"
             if [[ "$("$resolve")" != "$device" ]]; then
                 log "$label" "device changed, restarting"
                 kill "$pid" 2>/dev/null
@@ -575,12 +593,46 @@ levels() {
 # system_profiler rather than CoreAudio directly, so this stays dependency-free.
 # It costs about a second, so only `status` pays for it.
 input_source_of() {
+    if [[ -x "$INPUT_SOURCE_HELPER" ]]; then
+        "$INPUT_SOURCE_HELPER" get "$1" 2>/dev/null
+        return
+    fi
     system_profiler SPAudioDataType 2>/dev/null | awk -v want="$1:" '
         index($0, want) && $0 ~ /:[ \t]*$/ { inblock = 1; next }
         inblock && /Input Source:/ { sub(/^ *Input Source: */, ""); print; exit }
         inblock && /^ *$/ { next }
         inblock && /:[ \t]*$/ { exit }
     '
+}
+
+# Put the selection back when it has drifted, which after a re-enumeration it
+# will have.
+#
+# Polled rather than set once before the chain starts, because setting it first
+# does not survive: CoreAudio re-asserts its own idea of the source when it
+# configures the device for capture, so an assert made before sox opens the
+# device is undone a fraction of a second later. Measured -- set returns noErr,
+# reads back correct, and is Line In again 400ms later. PipeWire does the same
+# thing on Linux, which is why the desk machine needs a guard watching mixer
+# events for exactly this. Asserting from the poll loop, once sox is up and the
+# device has settled, holds. The change reaches the running capture, so there is
+# no need to restart sox around it.
+#
+# Writing only when it is actually wrong keeps this quiet in the log and keeps
+# it from fighting the driver; an unmanaged device or a missing helper costs one
+# cheap read.
+ensure_input_source() {
+    local dev="$1" now
+    [[ -n "$MIC_INPUT_SOURCE" ]] || return 0
+    [[ -x "$INPUT_SOURCE_HELPER" ]] || return 0
+    now="$("$INPUT_SOURCE_HELPER" get "$dev" 2>/dev/null)"
+    # Empty means the device models no data source at all, so there is nothing
+    # to manage and nothing to warn about.
+    [[ -n "$now" ]] || return 0
+    [[ "$now" == *"$MIC_INPUT_SOURCE"* ]] && return 0
+    log chain "input source on '$dev' was '$now', setting '$MIC_INPUT_SOURCE'"
+    "$INPUT_SOURCE_HELPER" set "$dev" "$MIC_INPUT_SOURCE" >/dev/null 2>&1 \
+        || log chain "could not set input source to '$MIC_INPUT_SOURCE'"
 }
 
 # Sources that are not a microphone. A device parked on one of these records
@@ -617,8 +669,16 @@ status() {
     local src
     src="$(input_source_of "$mic")"
     if [[ -n "$src" ]]; then
-        printf '  input source   %s%s\n' "$src" \
-            "$(input_source_is_mic "$src" && echo "" || echo "  [NOT A MIC -- records silence]")"
+        printf '  input source   %s%s%s\n' "$src" \
+            "$(input_source_is_mic "$src" && echo "" || echo "  [NOT A MIC -- records silence]")" \
+            "$( [[ -n "$MIC_INPUT_SOURCE" ]] && echo "  (pinned to '$MIC_INPUT_SOURCE')" )"
+        if [[ -n "$MIC_INPUT_SOURCE" && ! -x "$INPUT_SOURCE_HELPER" ]]; then
+            printf '                 pinned, but %s is missing -- run ./install.sh audio\n' \
+                "$INPUT_SOURCE_HELPER"
+        fi
+        if [[ -x "$INPUT_SOURCE_HELPER" ]] && ! input_source_is_mic "$src"; then
+            "$INPUT_SOURCE_HELPER" list "$mic" 2>/dev/null | sed 's/^/                 /'
+        fi
     fi
     printf '  sink           %s%s\n' "$SINK_DEVICE" \
         "$(device_exists "$SINK_DEVICE" output && echo "" || echo "  [NOT INSTALLED]")"
@@ -685,8 +745,8 @@ case "${1:-status}" in
             *) usage; exit 1 ;;
         esac
         ;;
-    chain)   supervise chain resolve_mic : chain_sox ;;
-    monitor) supervise monitor resolve_monitor_out monitor_veto monitor_sox ;;
+    chain)   supervise chain resolve_mic : chain_sox ensure_input_source ;;
+    monitor) supervise monitor resolve_monitor_out monitor_veto monitor_sox : ;;
     start|stop|restart)
         targets=$(agents_for "${2:-all}") || exit 1
         for a in $targets; do
