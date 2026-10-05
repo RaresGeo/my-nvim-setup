@@ -257,7 +257,11 @@ gate_effect() {
 # intended -- it is a multi-argument effect.
 # shellcheck disable=SC2046
 chain_sox() {
-    sox -q --buffer "$SOX_BUFFER" \
+    # exec so this subshell is REPLACED by sox: the pid `supervise` captures is
+    # then sox's own, and `kill` reaches it. Without exec the pid belonged to the
+    # subshell, killing it left sox running and reparented onto launchd, and it
+    # kept the CoreAudio device open forever.
+    exec sox -q --buffer "$SOX_BUFFER" \
         -t coreaudio "$1" \
         -r "$RATE" -c 2 -t coreaudio "$SINK_DEVICE" \
         remix - \
@@ -268,10 +272,58 @@ chain_sox() {
 }
 
 monitor_sox() {
-    sox -q --buffer "$SOX_BUFFER" \
+    # exec for the same reason as chain_sox: so the pid is sox's own.
+    exec sox -q --buffer "$SOX_BUFFER" \
         -r "$RATE" -c 2 -t coreaudio "$SINK_DEVICE" \
         -r "$RATE" -c 2 -t coreaudio "$1" \
         vol "$MONITOR_GAIN" dB
+}
+
+# A sox still holding a CoreAudio device is worse than no sox at all: the device
+# stays busy, so the next one contends with it instead of replacing it, and
+# contention on the sink is silence rather than sidetone. One USB switch used to
+# leak a pair, and they accumulated -- seven of them, reparented onto launchd,
+# with the monitor log 22MB of "unhandled buffer overrun" to show for it.
+#
+# Two ways one was left behind. `kill` reaching only the subshell is fixed above
+# by exec'ing sox. The other cannot be fixed from inside: a supervisor that is
+# itself killed -- `launchctl bootout`, a crash -- never runs another line, so
+# its child survives it. Hence a pid file: the next supervisor to start finds
+# what the last one could not clean up.
+SOX_PID=""
+SOX_PIDFILE=""
+
+sox_cleanup() {
+    [[ -n "$SOX_PID" ]] && kill "$SOX_PID" 2>/dev/null
+    [[ -n "$SOX_PIDFILE" ]] && rm -f "$SOX_PIDFILE"
+    return 0
+}
+
+# Only ever kill something that still looks like our own sox: a pid file can be
+# stale, and by then the number may belong to anything.
+is_our_sox() {
+    local pid="$1" cmd
+    [[ -n "$pid" ]] || return 1
+    cmd="$(ps -o command= -p "$pid" 2>/dev/null)" || return 1
+    [[ "$cmd" == *sox* && "$cmd" == *"$SINK_DEVICE"* ]]
+}
+
+reap_stray_sox() {
+    local label="$1" file="$2" pid i
+    [[ -r "$file" ]] || return 0
+    pid="$(cat "$file" 2>/dev/null)"
+    if is_our_sox "$pid"; then
+        log "$label" "reaping stray sox $pid left by an earlier run"
+        kill "$pid" 2>/dev/null
+        # Let it release the device before we open it again, or the fresh sox
+        # starts into the contention we are trying to clear.
+        for i in 1 2 3 4 5 6 7 8 9 10; do
+            kill -0 "$pid" 2>/dev/null || break
+            sleep 0.2
+        done
+        kill -0 "$pid" 2>/dev/null && kill -9 "$pid" 2>/dev/null
+    fi
+    rm -f "$file"
 }
 
 # Run one sox pipeline and restart it if the device it should be using changes
@@ -283,6 +335,15 @@ monitor_sox() {
 supervise() {
     local label="$1" resolve="$2" veto="$3" runner="$4"
     local last_complaint="" fast_failures=0
+
+    mkdir -p "$STATE_DIR"
+    SOX_PIDFILE="$STATE_DIR/$label.sox.pid"
+    reap_stray_sox "$label" "$SOX_PIDFILE"
+
+    # launchd stops these with SIGTERM. Without this the shell goes away and
+    # sox, its child, is reparented and keeps the device.
+    trap 'sox_cleanup; exit 0' TERM INT
+    trap 'sox_cleanup' EXIT
 
     while :; do
         local device reason
@@ -314,6 +375,8 @@ supervise() {
         local started=$SECONDS
         "$runner" "$device" &
         local pid=$!
+        SOX_PID="$pid"
+        printf '%s\n' "$pid" > "$SOX_PIDFILE"
 
         while kill -0 "$pid" 2>/dev/null; do
             sleep "$SUPERVISE_POLL"
@@ -329,6 +392,8 @@ supervise() {
             fi
         done
         wait "$pid" 2>/dev/null
+        SOX_PID=""
+        rm -f "$SOX_PIDFILE"
 
         # A sox that dies immediately is a broken command line, not a device
         # blip, and retrying it every few seconds buries the actual error under
