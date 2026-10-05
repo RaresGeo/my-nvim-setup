@@ -33,10 +33,20 @@ if launchctl list 2>/dev/null | grep -q 'com.danielsetup.omniwm-empty-workspace-
 else
     echo "no   omniwm-empty-workspace-focus"
 fi
-if launchctl list 2>/dev/null | grep -q 'com.dotfiles.dock-watch'; then
-    echo "yes  dock-watch"
+# `launchctl list` only says the job is LOADED, which it stays even when launchd
+# has given up spawning it -- a wedged dock-watch still showed "yes" here while
+# its run count sat frozen and the dock state had not been applied for an hour.
+# So read the job record and report whether it is actually running.
+dock_watch="$(launchctl print "gui/$UID/com.dotfiles.dock-watch" 2>/dev/null)"
+if [[ -z "$dock_watch" ]]; then
+    echo "no   dock-watch (not loaded)"
+elif [[ "$dock_watch" == *"penalty box"* || "$dock_watch" == *"spawn failed"* ]]; then
+    # Recover with: launchctl kickstart -k gui/$UID/com.dotfiles.dock-watch
+    echo "DEAD dock-watch (launchd gave up spawning it: $(printf '%s' "$dock_watch" | awk -F'= ' '/last exit code/ {print $2; exit}'))"
+elif [[ "$dock_watch" == *"state = running"* ]]; then
+    echo "yes  dock-watch (resident, pid $(printf '%s' "$dock_watch" | awk -F'= ' '/^\t*pid = / {print $2; exit}'))"
 else
-    echo "no   dock-watch"
+    echo "warn dock-watch loaded but not running"
 fi
 
 section "Config links"
