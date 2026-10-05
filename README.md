@@ -67,6 +67,26 @@ mv ~/.config/nvim ~/.config/dotfiles
 | [`karabiner`](karabiner/README.md) | Built-in keyboard remap, Cmd+Enter / Cmd+Shift+B launchers | macOS |
 | [`aerospace`](aerospace/README.md) | Tiling window manager, minimal config | macOS |
 
+## Per-device overrides
+
+Not everything belongs in a repo that several machines share. `zsh/local.zsh`
+is sourced at the end of `.zshrc` if it exists, and is gitignored, so a single
+host can add what only it needs — an account-specific environment variable, a
+path that exists nowhere else, a one-off alias — without the repo carrying it.
+
+```bash
+cat >> ~/.config/dotfiles/zsh/local.zsh <<'SH'
+alias deploy='./scripts/deploy.sh --host thisbox'
+SH
+```
+
+The file is resolved relative to `.zshrc` itself, through the symlink, so it
+works wherever the checkout lives. It is optional: nothing warns when it is
+absent.
+
+Keep it small. Anything that would help a second machine belongs in a module
+instead, where it is tracked and installed.
+
 ## Omarchy
 
 The setup is built for [Omarchy](https://omarchy.org/) Quattro (4.x) but does
@@ -139,7 +159,8 @@ left out, for the same reason.
 │   ├── install.sh
 │   ├── omarchy.sh
 │   ├── .zshrc              # -> ~/.zshrc
-│   └── zsh-colors.tpl      # themed template
+│   ├── zsh-colors.tpl      # themed template
+│   └── local.zsh           # per-device, untracked (optional)
 ├── herdr/
 │   ├── install.sh
 │   └── config.toml         # -> ~/.config/herdr/config.toml

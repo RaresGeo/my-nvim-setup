@@ -6,3 +6,6 @@ debug
 foo.*
 *.log
 data
+
+# Per-device zsh overrides — untracked on purpose, see README
+zsh/local.zsh
