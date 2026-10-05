@@ -567,6 +567,40 @@ levels() {
     echo "  To keep it:  echo 'GATE_THRESHOLD=$suggested' >> ~/.config/audio/local.conf && micctl restart"
 }
 
+# What the device itself has selected on its input -- macOS calls it "Input
+# Source" and shows it in System Settings. It is neither the device name nor the
+# volume: a multi-input interface can sit on a jack with nothing in it, which is
+# a perfectly healthy device delivering digital silence.
+#
+# system_profiler rather than CoreAudio directly, so this stays dependency-free.
+# It costs about a second, so only `status` pays for it.
+input_source_of() {
+    system_profiler SPAudioDataType 2>/dev/null | awk -v want="$1:" '
+        index($0, want) && $0 ~ /:[ \t]*$/ { inblock = 1; next }
+        inblock && /Input Source:/ { sub(/^ *Input Source: */, ""); print; exit }
+        inblock && /^ *$/ { next }
+        inblock && /:[ \t]*$/ { exit }
+    '
+}
+
+# Sources that are not a microphone. A device parked on one of these records
+# silence however healthy everything downstream is -- which is exactly how a
+# dead mic hid behind "mic: Sound BlasterX G6" and "usable: yes". The G6
+# auto-selects from what is plugged in, falls back to Line In when it finds no
+# mic, and re-reverts within half a second of being set, so this is something to
+# report rather than something to fix in software.
+# Named negatively on purpose. Drivers put arbitrary strings here -- a webcam
+# and BlackHole both report "Default", the built-in reports its own name -- so
+# guessing which strings mean "microphone" false-positives on anything
+# unexpected. Only the inputs that are definitely not a mic get flagged.
+input_source_is_mic() {
+    case "$1" in
+        *[Ll]ine\ [Ii]n*|*S/PDIF*|*SPDIF*|*[Oo]ptical*|*[Dd]igital\ [Ii]n*|*What\ U\ Hear*|*[Aa]ux*)
+            return 1 ;;
+        *) return 0 ;;
+    esac
+}
+
 status() {
     local mic out veto
     mic=$(resolve_mic)
@@ -580,6 +614,12 @@ status() {
     echo "Chain"
     printf '  mic            %s%s\n' "$mic" \
         "$(device_exists "$mic" input && echo "" || echo "  [MISSING]")"
+    local src
+    src="$(input_source_of "$mic")"
+    if [[ -n "$src" ]]; then
+        printf '  input source   %s%s\n' "$src" \
+            "$(input_source_is_mic "$src" && echo "" || echo "  [NOT A MIC -- records silence]")"
+    fi
     printf '  sink           %s%s\n' "$SINK_DEVICE" \
         "$(device_exists "$SINK_DEVICE" output && echo "" || echo "  [NOT INSTALLED]")"
     printf '  gate           unity at %s dBFS, -%s dB floor over a %s dB ramp, %s dB knee\n' \
@@ -596,6 +636,14 @@ status() {
     printf '  usable         %s\n' "${veto:-yes}"
     printf '  agent          %s\n' "$(agent_state com.dotfiles.mic-monitor)"
     echo
+    if [[ -n "$src" ]] && ! input_source_is_mic "$src"; then
+        echo "NOTE: '$mic' is set to '$src', which carries no microphone, so the"
+        echo "      chain is relaying silence and there is nothing to hear yourself"
+        echo "      with. Plug the mic into the device's own mic jack -- a device"
+        echo "      that auto-selects picks it up, and one that does not has the"
+        echo "      setting in System Settings > Sound > Input."
+        echo
+    fi
     if [[ "$(SwitchAudioSource -t input -c 2>/dev/null)" == "$SINK_DEVICE" ]]; then
         echo "$SINK_DEVICE is the default input, so apps need no per-app setup."
     else
