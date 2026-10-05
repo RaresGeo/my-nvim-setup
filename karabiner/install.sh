@@ -1,14 +1,17 @@
 #!/bin/bash
 # Karabiner module: key remaps and launcher shortcuts (macOS only).
 #
-#   - builtin-keyboard.json: swaps fn and left Ctrl on the MacBook's own
-#     keyboard, so Ctrl sits in the corner. External keyboards are untouched.
+#   - devices/*.json: one file per device, matched and replaced by its
+#     identifiers. builtin-keyboard.json swaps fn and left Ctrl on the
+#     MacBook's own keyboard, so Ctrl sits in the corner; logitech-mouse.json
+#     flips the external mouse's wheel, so macOS's one global natural-scroll
+#     setting can stay on for the trackpad without inverting the mouse.
 #   - rules/*.json: complex modifications (Option+Enter terminal, Option+Shift+B
 #     browser, Option+, to dismiss a notification), also linked into
 #     Karabiner's assets for its UI.
 #
 # Karabiner owns karabiner.json, so this merges into the selected profile
-# instead of replacing it: our device entry and rules are swapped in by
+# instead of replacing it: our device entries and rules are swapped in by
 # identifier/description, everything else is kept, and the old file is backed
 # up whenever something changes. Rules we installed before are tracked in
 # .dotfiles-rules.json so that renaming or deleting one here removes the old
@@ -57,10 +60,13 @@ else:
 profiles = config.setdefault("profiles", [])
 profile = next((p for p in profiles if p.get("selected")), profiles[0])
 
-with open(os.path.join(module, "builtin-keyboard.json")) as f:
-    device = json.load(f)
-devices = [d for d in profile.get("devices", []) if d.get("identifiers") != device["identifiers"]]
-profile["devices"] = devices + [device]
+our_devices = []
+for device_file in sorted(glob.glob(os.path.join(module, "devices", "*.json"))):
+    with open(device_file) as f:
+        our_devices.append(json.load(f))
+our_identifiers = [d["identifiers"] for d in our_devices]
+devices = [d for d in profile.get("devices", []) if d.get("identifiers") not in our_identifiers]
+profile["devices"] = devices + our_devices
 
 # Rules are matched by description, so renaming one here used to leave the old
 # copy behind in the profile for ever -- and a leftover rule still fires, which

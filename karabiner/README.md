@@ -15,7 +15,8 @@ offers to add it the first time Option+, is pressed.
 
 | File | Does |
 |------|------|
-| `builtin-keyboard.json` | On the MacBook's own keyboard, swaps fn and left Ctrl so Ctrl sits in the corner. External keyboards are untouched: the built-in one is the only keyboard that reports no vendor or product ID. |
+| `devices/builtin-keyboard.json` | On the MacBook's own keyboard, swaps fn and left Ctrl so Ctrl sits in the corner. External keyboards are untouched: the built-in one is the only keyboard that reports no vendor or product ID. |
+| `devices/logitech-mouse.json` | Flips the scroll wheel on the Logitech receiver's mouse (`046d:c547`), both axes. macOS keeps a single `com.apple.swipescrolldirection` shared by the trackpad and every mouse, so this is the only way to have natural scrolling on the trackpad and a conventional wheel on the mouse. |
 | `rules/launchers.json` | **Option+Enter**: a new Alacritty instance. **Option+Cmd+Enter**: one running tmux. **Option+Shift+B**: a new window of the default browser. |
 | `rules/alacritty-close.json` | **Option+W** in Alacritty sends Cmd+W, so the window closes through Alacritty's own handling; it has no title bar for a window manager to press. |
 | `rules/notifications.json` | **Option+,**: dismisses the newest notification banner. |
@@ -24,9 +25,10 @@ offers to add it the first time Option+, is pressed.
 | `bin/open-browser` | Works out the default browser and opens a new window the way that browser needs (Chromium, Firefox-based, Safari) |
 
 Karabiner owns `~/.config/karabiner/karabiner.json`, so `install.sh` merges into
-the selected profile rather than replacing it. The device entry and each rule
-(matched by description) are swapped in, everything else is left alone, and the
-old file is backed up whenever something changes. Change remaps here and re-run
+the selected profile rather than replacing it. Each `devices/*.json` entry
+(matched by its `identifiers`) and each rule (matched by description) are
+swapped in, everything else is left alone, and the old file is backed up
+whenever something changes. Change remaps here and re-run
 the module rather than editing them in Karabiner's UI.
 
 Descriptions double as rule identity, so the descriptions installed on the last
