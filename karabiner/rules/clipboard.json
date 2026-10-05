@@ -1,0 +1,78 @@
+{
+  "title": "Clipboard (dotfiles: karabiner/rules/clipboard.json)",
+  "rules": [
+    {
+      "description": "Option+Ctrl+V: Raycast clipboard history",
+      "manipulators": [
+        {
+          "type": "basic",
+          "from": {
+            "key_code": "v",
+            "modifiers": {
+              "mandatory": [
+                "option",
+                "control"
+              ],
+              "optional": []
+            }
+          },
+          "to": [
+            {
+              "shell_command": "open \"raycast://extensions/raycast/clipboard-history/clipboard-history\""
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "description": "Option+C: copy, so one combo copies in every app",
+      "manipulators": [
+        {
+          "type": "basic",
+          "from": {
+            "key_code": "c",
+            "modifiers": {
+              "mandatory": [
+                "option"
+              ],
+              "optional": []
+            }
+          },
+          "to": [
+            {
+              "key_code": "c",
+              "modifiers": [
+                "command"
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "description": "Option+V: paste, so one combo pastes in every app",
+      "manipulators": [
+        {
+          "type": "basic",
+          "from": {
+            "key_code": "v",
+            "modifiers": {
+              "mandatory": [
+                "option"
+              ],
+              "optional": []
+            }
+          },
+          "to": [
+            {
+              "key_code": "v",
+              "modifiers": [
+                "command"
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
