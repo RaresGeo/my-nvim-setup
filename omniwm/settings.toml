@@ -34,7 +34,7 @@ splitWidthMultiplier = 1.0
 useGlobalGaps = true
 
 [focus]
-crossesMonitorAtEdge = false
+crossesMonitorAtEdge = true
 followsMouse = true
 followsWindowToMonitor = true
 lockModifier = "off"
