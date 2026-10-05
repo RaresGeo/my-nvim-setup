@@ -3,13 +3,24 @@
 # karabiner/rules/notifications.json.
 #
 # macOS exposes no API for this, so we drive NotificationCenter's own
-# accessibility tree. Every banner is a group in
+# accessibility tree. Banners live in window "Notification Center" -- the
+# window only exists while something is on screen -- and carry the same
+# actions the banner offers on hover; the one described "Close" is the X.
+#
+# We used to index straight to
 #
 #   window "Notification Center" > group 1 > group 1 > scroll area 1
 #
-# and carries the same actions the banner offers on hover; the one described
-# "Close" is the X. The window only exists while something is on screen.
-# Banners stack downwards from the top right, so the smallest y is the latest.
+# and treat every group in there as a banner. That path is not stable: the
+# hosting view has one child group per display, their order is not fixed, and
+# an empty one holds a "No recent notifications" placeholder rather than a
+# banner. Land on the wrong group and every press reports "no-close-action"
+# while the banner sits there untouched. So walk the window instead and pick
+# the elements that actually are banners (subrole AXNotificationCenterBanner)
+# or at least offer a Close action, wherever they turn up.
+#
+# Banners stack downwards from the top of the screen, so the smallest y is the
+# latest.
 #
 # Whatever runs this needs Accessibility (System Settings > Privacy & Security >
 # Accessibility). From the hotkey that is Karabiner's own
@@ -19,31 +30,76 @@ set -uo pipefail
 
 status=0
 result="$(osascript <<'APPLESCRIPT' 2>&1
+on hasClose(el)
+    tell application "System Events"
+        try
+            repeat with a in actions of el
+                if description of a is "Close" then return true
+            end repeat
+        end try
+        try
+            repeat with a in actions of el
+                if description of a contains "Close" then return true
+            end repeat
+        end try
+    end tell
+    return false
+end hasClose
+
+-- Collect banners anywhere under el. A banner never nests inside another, so
+-- stop descending as soon as one matches.
+on collectBanners(el, depth, acc)
+    tell application "System Events"
+        set sub to ""
+        try
+            set sub to subrole of el
+        end try
+        set closable to my hasClose(el)
+        if closable or sub is "AXNotificationCenterBanner" then
+            set y to 0
+            try
+                set y to item 2 of ((position of el) as list)
+            end try
+            set end of acc to {contents of el, y, closable}
+            return acc
+        end if
+        if depth < 8 then
+            try
+                repeat with kid in UI elements of el
+                    my collectBanners(contents of kid, depth + 1, acc)
+                end repeat
+            end try
+        end if
+    end tell
+    return acc
+end collectBanners
+
 tell application "System Events"
     if not (exists application process "NotificationCenter") then
         return "notification-center-not-running"
     end if
     tell application process "NotificationCenter"
         if not (exists window "Notification Center") then return "nothing-showing"
+
+        set found to {}
         try
-            set banners to groups of scroll area 1 of group 1 of group 1 of ¬
-                window "Notification Center"
+            my collectBanners(window "Notification Center", 0, found)
         on error
             return "notification-center-layout-changed"
         end try
-        if banners is {} then return "nothing-showing"
+        if found is {} then return "nothing-showing"
 
-        -- Coerce before indexing, or the subscript is read as another
-        -- reference into the process and never evaluated.
-        set newest to item 1 of banners
-        set newestY to item 2 of ((position of newest) as list)
-        repeat with banner in banners
-            set bannerY to item 2 of ((position of banner) as list)
-            if bannerY < newestY then
-                set newest to contents of banner
-                set newestY to bannerY
+        set newest to missing value
+        set newestY to 0
+        repeat with banner in found
+            if item 3 of banner then
+                if newest is missing value or (item 2 of banner) < newestY then
+                    set newest to item 1 of banner
+                    set newestY to item 2 of banner
+                end if
             end if
         end repeat
+        if newest is missing value then return "no-close-action"
 
         -- The actions are named opaquely; the description is the label.
         try
