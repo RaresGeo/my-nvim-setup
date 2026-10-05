@@ -63,6 +63,13 @@ against the wanted layout it costs one query when nothing is wrong, and it stays
 quiet in the log unless it actually moves something. `dockctl status` prints the
 display signature.
 
+`dockctl detect` prints just `docked` or `undocked`, which is the contract other
+modules read rather than parsing `status`. The [`audio`](../audio/README.md)
+module gates mic monitoring on it: sidetone is only wanted at the desk, where
+there is a headset to hear it in. Note that a manual `dockctl dock` is not a
+lever on that, because the watcher re-applies the hardware state within five
+seconds; `MONITOR_REQUIRE_DOCK=0` is.
+
 The flip side: moving a workspace to another display by hand gets undone within
 five seconds. That is what owning placement means — set `DOCK_MOVE_WORKSPACES=0`
 if you want to place things yourself.

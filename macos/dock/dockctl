@@ -12,6 +12,7 @@
 #
 # Usage:
 #   dockctl status          print the detected state and what is currently set
+#   dockctl detect          print just docked|undocked, for other scripts
 #   dockctl apply           apply, but only if the state changed since last run
 #   dockctl apply --force   apply unconditionally
 #   dockctl watch           apply in a loop; this is what the launchd agent runs
@@ -352,6 +353,10 @@ current_font_size() {
 
 cmd="${1:-status}"
 case "$cmd" in
+    # Just the state, nothing else, so other scripts have a contract to read
+    # instead of parsing `status`. The audio module gates mic monitoring on
+    # this: sidetone is only wanted at the desk, where there is a headset.
+    detect) detect_state ;;
     status)
         detected="$(detect_state)"
         say "detected:   $detected"
@@ -428,5 +433,5 @@ case "$cmd" in
             END { flush() }
         '
         ;;
-    *) sed -n '2,20p' "$0" | sed 's|^# \?||'; exit 1 ;;
+    *) sed -n '2,21p' "$0" | sed 's|^# \?||'; exit 1 ;;
 esac

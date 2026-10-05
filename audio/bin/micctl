@@ -1,0 +1,606 @@
+#!/bin/bash
+# micctl -- microphone processing chain, monitoring and mute for macOS.
+#
+# The Linux and Windows boxes get this from EasyEffects and VoiceMeeter Potato:
+# the mic runs through a noise gate before anything else sees it, you can hear
+# yourself, and one key mutes the lot. macOS ships none of that, so this builds
+# it from a virtual audio device and two SoX pipelines.
+#
+#   chain    physical mic -> highpass + noise gate -> BlackHole 2ch, which is
+#            what apps select as their input device. This is the piece that
+#            makes the gate reach the other end of the call, exactly like
+#            VoiceMeeter's virtual input or an EasyEffects source does. Without
+#            it a gate could only ever clean up what *you* hear.
+#   monitor  BlackHole 2ch -> headphones. It deliberately reads the sink rather
+#            than the mic, so what you hear is the processed signal -- if the
+#            gate is clamping your speech you find out immediately.
+#   mute     sets CoreAudio's own mute flag on whatever is the default input,
+#            which in this setup is the sink -- so it silences precisely what
+#            every app reads. A real mute flag rather than a volume of zero,
+#            so unmuting has no level to remember. The hardware mic stays live,
+#            so an app deliberately pointed at the mic itself still hears you;
+#            see hw_mute() for why nothing here can reach that.
+#
+# chain and monitor are run by launchd (see ../install.sh) and supervise their
+# own sox process in a loop. sox exits whenever CoreAudio reconfigures under it
+# -- headphones unplugged, driver reloaded, sample rate changed -- and handling
+# that here means launchd never sees the process die. That is on purpose: a
+# KeepAlive job that exits quickly and often lands in launchd's penalty box,
+# which is how the dock watcher in macos/ wedged itself (see the comment in
+# macos/dock/com.dotfiles.dock-watch.plist.tpl).
+
+# No `set -e`. This is a supervisor: a sox that dies, a device that vanishes
+# mid-poll and a `kill -0` on a reaped pid are all normal, expected conditions
+# that the loops below handle. Aborting the whole process on the first one
+# would turn a recoverable blip into a dead microphone.
+set -uo pipefail
+
+# Karabiner and launchd both run commands with a bare PATH that has no
+# Homebrew, so sox and SwitchAudioSource would simply not be found. Everything
+# here resolves through PATH, so fix PATH once rather than absolutising a dozen
+# call sites.
+PATH="/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
+
+STATE_DIR="${MIC_STATE_DIR:-$HOME/.local/state/audio}"
+MUTE_STATE_FILE="$STATE_DIR/muted"
+
+# ---------------------------------------------------------------------------
+# Tunables. Every one of these can be overridden from the environment, or
+# permanently in ~/.config/audio/local.conf, which is not tracked by the repo
+# -- device names are the one thing here that is genuinely per-machine.
+# ---------------------------------------------------------------------------
+LOCAL_CONF="${MIC_CONF:-$HOME/.config/audio/local.conf}"
+# shellcheck source=/dev/null
+[[ -r "$LOCAL_CONF" ]] && source "$LOCAL_CONF"
+
+# The virtual device the chain writes to and apps read from.
+SINK_DEVICE="${SINK_DEVICE:-BlackHole 2ch}"
+
+# Left empty, the mic follows whatever macOS currently calls the default input,
+# so plugging in a headset moves the chain onto it with no config change. Set
+# it to pin one device instead.
+MIC_DEVICE="${MIC_DEVICE:-}"
+MIC_FALLBACK="${MIC_FALLBACK:-MacBook Pro Microphone}"
+
+# Left empty, monitoring follows the default output.
+MONITOR_DEVICE="${MONITOR_DEVICE:-}"
+MONITOR_GAIN="${MONITOR_GAIN:-0}"
+
+# Playing the mic out of the built-in speakers is an acoustic feedback loop
+# with a noise gate holding the door open, so monitoring refuses to start on
+# them unless this is set to 1.
+MONITOR_ALLOW_SPEAKERS="${MONITOR_ALLOW_SPEAKERS:-0}"
+
+# Sidetone is only wanted at the desk, where there is a headset to hear it in.
+# Undocked there is nothing but the built-in speakers, so monitoring would be
+# an echo at best. Set to 0 to monitor wherever the output allows it.
+MONITOR_REQUIRE_DOCK="${MONITOR_REQUIRE_DOCK:-1}"
+
+RATE="${MIC_RATE:-48000}"
+
+# Gate threshold in dBFS *peak*, not RMS: `micctl levels` reports both and
+# recommends a value.
+GATE_THRESHOLD="${GATE_THRESHOLD:--40}"
+
+# How far below the threshold quiet material is pushed, in dB, and the single
+# setting that decides whether this sounds like a gate or like a room.
+#
+# sox(1)'s documented noise gate maps everything below the threshold to -inf.
+# That measures beautifully and sounds awful: you get absolute digital silence
+# alternating with room tone, and the ear hears the switching rather than the
+# noise. A real expander attenuates by a finite amount, so the background drops
+# away but never vanishes. 35dB is inaudible in practice while keeping the
+# transition continuous. Set to `inf` for the old hard gate.
+GATE_RANGE="${GATE_RANGE:-35}"
+
+# How wide, in dB, the transition from full attenuation to untouched is. This
+# is what stops the expander being a gate with extra steps: the curve ramps
+# across this window instead of stepping, and below it the attenuation simply
+# holds at GATE_RANGE rather than deepening forever.
+GATE_WIDTH="${GATE_WIDTH:-12}"
+
+# Soft knee in dB, rounding the two corners so even the ends of the ramp are
+# not audible as events.
+GATE_KNEE="${GATE_KNEE:-6}"
+# Fast attack so a word's first consonant is not swallowed; slow decay so the
+# gate holds through the gaps between words instead of chattering.
+GATE_ATTACK="${GATE_ATTACK:-0.02}"
+GATE_DECAY="${GATE_DECAY:-0.35}"
+# compand's `delay` lets the gate act predictively, at the cost of exactly that
+# much added latency on a signal that is monitored live. Measured against tones,
+# 0.02 and 0 gate identically and a sudden burst keeps its onset to within
+# 0.01dB either way, so the predictive window buys nothing here and costs 20ms
+# of the round trip. The sox man page suggests 0.1-0.2s; at those values the
+# sidetone is an echo.
+GATE_DELAY="${GATE_DELAY:-0}"
+
+HIGHPASS_HZ="${HIGHPASS_HZ:-80}"
+
+# Makeup gain in dB, applied AFTER the gate rather than before it. That order
+# is deliberate: `micctl levels` measures the raw mic, so a threshold derived
+# from it stays correct whatever the gain is set to. A preamp ahead of the gate
+# would move the noise floor and the threshold together, and quietly undo the
+# tuning every time the gain changed. Watch for clipping above about +10.
+MIC_GAIN="${MIC_GAIN:-0}"
+
+# sox's buffer in bytes, paid once per hop. At 48kHz stereo 16-bit, 1024 bytes
+# is 256 frames, about 5.3ms. Swept against overruns on this machine: clean at
+# 1024 and above, and 512 drops data, so this sits one step off the floor.
+SOX_BUFFER="${SOX_BUFFER:-1024}"
+
+
+SUPERVISE_RETRY="${SUPERVISE_RETRY:-3}"
+SUPERVISE_POLL="${SUPERVISE_POLL:-2}"
+
+log() { printf '%s micctl[%s]: %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "${1}" "${2}"; }
+
+# ---------------------------------------------------------------------------
+# Devices
+# ---------------------------------------------------------------------------
+
+device_exists() {
+    # $1 = name, $2 = input|output
+    SwitchAudioSource -a -t "$2" 2>/dev/null | grep -Fxq "$1"
+}
+
+resolve_mic() {
+    local cur
+    # A pinned device wins, but only while it is actually attached: pinning the
+    # desk mic must not leave the chain dead the moment you undock.
+    if [[ -n "$MIC_DEVICE" ]] && device_exists "$MIC_DEVICE" input; then
+        printf '%s' "$MIC_DEVICE"
+        return
+    fi
+    cur=$(SwitchAudioSource -t input -c 2>/dev/null)
+    # Never let the chain read its own output. The sink is meant to BE the
+    # system default input, so that new apps need no setup at all; following
+    # the default blindly would then wire the chain straight back into itself.
+    if [[ -n "$cur" && "$cur" != "$SINK_DEVICE" ]] && device_exists "$cur" input; then
+        printf '%s' "$cur"
+        return
+    fi
+    printf '%s' "$MIC_FALLBACK"
+}
+
+resolve_monitor_out() {
+    if [[ -n "$MONITOR_DEVICE" ]]; then printf '%s' "$MONITOR_DEVICE"; return; fi
+    SwitchAudioSource -t output -c 2>/dev/null
+}
+
+# One definition of "docked" for the whole setup: dockctl's, which keys off the
+# desk keyboard arriving on the USB bus rather than probing displays. Falls back
+# to the state file the dock watcher maintains, and finally to "undocked",
+# because failing safe here means no sidetone -- silence, rather than the mic
+# howling into the built-in speakers.
+dock_state() {
+    local dockctl="$HOME/.local/bin/dockctl" state
+    if [[ -x "$dockctl" ]] && state=$("$dockctl" detect 2>/dev/null) && [[ -n "$state" ]]; then
+        printf '%s' "$state"
+        return
+    fi
+    local file="${XDG_STATE_HOME:-$HOME/.local/state}/dock/state"
+    if [[ -r "$file" ]]; then
+        tr -d '[:space:]' < "$file"
+        return
+    fi
+    printf 'undocked'
+}
+
+# Why the given output is unfit to monitor on, or nothing if it is fine.
+monitor_veto() {
+    local out="$1"
+    [[ -n "$out" ]] || { printf 'no default output device'; return; }
+    if (( MONITOR_REQUIRE_DOCK )) && [[ "$(dock_state)" != docked ]]; then
+        printf 'undocked, so there is no headset to monitor into (MONITOR_REQUIRE_DOCK=0 to override)'
+        return
+    fi
+    if [[ "$out" == "$SINK_DEVICE" ]]; then
+        printf 'output is the sink itself (%s), which would loop' "$out"
+        return
+    fi
+    if (( ! MONITOR_ALLOW_SPEAKERS )); then
+        case "$out" in
+            *Speakers*|*"Built-in"*)
+                printf 'output is %s: monitoring the mic through the speakers feeds back (MONITOR_ALLOW_SPEAKERS=1 to override)' "$out"
+                return
+                ;;
+        esac
+    fi
+}
+
+# ---------------------------------------------------------------------------
+# The SoX pipelines
+# ---------------------------------------------------------------------------
+
+# A downward expander, not a gate: above the threshold the signal is untouched,
+# below it the level is pulled down towards -GATE_RANGE dB along a sloped,
+# soft-kneed curve. The transfer function anchors at -90dB attenuated by the
+# full range, rises to unity at the threshold, and compand assumes (0,0) above
+# that, so loud material passes through at exactly its own level.
+#
+# GATE_RANGE=inf restores sox(1)'s own gate recipe, where everything below the
+# threshold maps to -inf. It is kept because it is what the manual documents,
+# not because it sounds good.
+gate_effect() {
+    if [[ "$GATE_RANGE" == inf || "$GATE_RANGE" == -inf ]]; then
+        local below
+        below=$(awk -v t="$GATE_THRESHOLD" 'BEGIN { printf "%.1f", t - 0.1 }')
+        printf 'compand %s,%s -inf,%s,-inf,%s,%s 0 -90 %s' \
+            "$GATE_ATTACK" "$GATE_DECAY" "$below" \
+            "$GATE_THRESHOLD" "$GATE_THRESHOLD" "$GATE_DELAY"
+        return
+    fi
+    # Three points: a floor where attenuation has levelled off at GATE_RANGE,
+    # the bottom of the transition window, and unity at the threshold. The
+    # segment below the window runs parallel to unity, which is what makes the
+    # attenuation constant down there instead of running away to silence.
+    local floor_in floor_out knee_in knee_out
+    floor_in=-90
+    floor_out=$(awk -v r="$GATE_RANGE" 'BEGIN { printf "%.1f", -90 - r }')
+    knee_in=$(awk -v t="$GATE_THRESHOLD" -v w="$GATE_WIDTH" 'BEGIN { printf "%.1f", t - w }')
+    knee_out=$(awk -v t="$GATE_THRESHOLD" -v w="$GATE_WIDTH" -v r="$GATE_RANGE" \
+        'BEGIN { printf "%.1f", t - w - r }')
+    printf 'compand %s,%s %s:%s,%s,%s,%s,%s,%s 0 -90 %s' \
+        "$GATE_ATTACK" "$GATE_DECAY" "$GATE_KNEE" \
+        "$floor_in" "$floor_out" "$knee_in" "$knee_out" \
+        "$GATE_THRESHOLD" "$GATE_THRESHOLD" "$GATE_DELAY"
+}
+
+# Note the option order: -r and -c come BEFORE the device they describe. sox
+# applies format options to the next file named after them, so putting them
+# afterwards makes it read the device as the output, then find options with no
+# file left to attach them to, and fail with "missing filename".
+#
+# `remix -` downmixes whatever the mic gives us to mono before processing, so a
+# stereo headset behaves like the built-in mic; `remix 1 1` then fans it back
+# out to the two channels the sink expects. Word splitting on gate_effect is
+# intended -- it is a multi-argument effect.
+# shellcheck disable=SC2046
+chain_sox() {
+    sox -q --buffer "$SOX_BUFFER" \
+        -t coreaudio "$1" \
+        -r "$RATE" -c 2 -t coreaudio "$SINK_DEVICE" \
+        remix - \
+        highpass "$HIGHPASS_HZ" \
+        $(gate_effect) \
+        gain "$MIC_GAIN" \
+        remix 1 1
+}
+
+monitor_sox() {
+    sox -q --buffer "$SOX_BUFFER" \
+        -r "$RATE" -c 2 -t coreaudio "$SINK_DEVICE" \
+        -r "$RATE" -c 2 -t coreaudio "$1" \
+        vol "$MONITOR_GAIN" dB
+}
+
+# Run one sox pipeline and restart it if the device it should be using changes
+# underneath it. sox itself only notices when the device it already holds goes
+# away, so switching the *default* device would otherwise leave the chain on
+# the old mic until something else restarted it.
+#
+# $1 label, $2 resolver function, $3 veto function (or ":"), $4 runner function
+supervise() {
+    local label="$1" resolve="$2" veto="$3" runner="$4"
+    local last_complaint="" fast_failures=0
+
+    while :; do
+        local device reason
+        device=$("$resolve")
+
+        reason=""
+        if [[ -z "$device" ]]; then
+            reason="no device resolved"
+        elif [[ "$veto" != ":" ]]; then
+            reason=$("$veto" "$device")
+        fi
+        if [[ -z "$reason" ]] && ! device_exists "$SINK_DEVICE" output; then
+            reason="$SINK_DEVICE is not installed (brew install --cask blackhole-2ch, then reboot)"
+        fi
+
+        if [[ -n "$reason" ]]; then
+            # Only say it once per distinct cause: this loop runs forever and
+            # the log is a file on disk.
+            if [[ "$reason" != "$last_complaint" ]]; then
+                log "$label" "waiting: $reason"
+                last_complaint="$reason"
+            fi
+            sleep "$SUPERVISE_RETRY"
+            continue
+        fi
+
+        last_complaint=""
+        log "$label" "starting on '$device'"
+        local started=$SECONDS
+        "$runner" "$device" &
+        local pid=$!
+
+        while kill -0 "$pid" 2>/dev/null; do
+            sleep "$SUPERVISE_POLL"
+            if [[ "$("$resolve")" != "$device" ]]; then
+                log "$label" "device changed, restarting"
+                kill "$pid" 2>/dev/null
+                break
+            fi
+            if [[ "$veto" != ":" && -n "$("$veto" "$device")" ]]; then
+                log "$label" "device no longer suitable, stopping"
+                kill "$pid" 2>/dev/null
+                break
+            fi
+        done
+        wait "$pid" 2>/dev/null
+
+        # A sox that dies immediately is a broken command line, not a device
+        # blip, and retrying it every few seconds buries the actual error under
+        # a fresh copy of sox's usage dump. Back off instead, so the reason
+        # stays near the end of the log where it can be read.
+        if (( SECONDS - started < 2 )); then
+            (( fast_failures++ ))
+            local backoff=$(( SUPERVISE_RETRY * (1 << (fast_failures < 5 ? fast_failures : 5)) ))
+            (( backoff > 120 )) && backoff=120
+            log "$label" "exited immediately ($fast_failures in a row); retrying in ${backoff}s"
+            sleep "$backoff"
+        else
+            fast_failures=0
+            sleep "$SUPERVISE_RETRY"
+        fi
+    done
+}
+
+# ---------------------------------------------------------------------------
+# Mute
+# ---------------------------------------------------------------------------
+
+# CoreAudio's own per-device mute flag, via SwitchAudioSource. This is a real
+# mute rather than a volume of zero, so unmuting does not have to remember a
+# level, and it applies to the device the system calls the default input.
+#
+# With the sink set as the default input -- which is the point of this setup, so
+# that a newly installed app needs no configuring -- that device is the sink, so
+# muting it silences precisely what every app reads. The hardware mic stays
+# live, so an app deliberately pointed at the mic itself would still hear you;
+# nothing here can reach that, because SwitchAudioSource's -m ignores -s and
+# only ever acts on the current default.
+hw_mute() {
+    SwitchAudioSource -t input -m "$1" >/dev/null 2>&1
+}
+
+mute_toggle() {
+    mkdir -p "$STATE_DIR"
+    # SwitchAudioSource's own toggle, so the device state always flips, even if
+    # the record below has drifted. CoreAudio's mute flag cannot be read back
+    # from the shell, so that record is for display and nothing else.
+    if ! hw_mute toggle; then
+        echo "could not reach the default input device" >&2
+        return 1
+    fi
+    if [[ -e "$MUTE_STATE_FILE" ]]; then
+        rm -f "$MUTE_STATE_FILE"
+        echo "unmuted"
+    else
+        : > "$MUTE_STATE_FILE"
+        echo "muted"
+    fi
+}
+
+mute_set() {
+    mkdir -p "$STATE_DIR"
+    case "$1" in
+        on)
+            hw_mute mute || { echo "could not reach the default input device" >&2; return 1; }
+            : > "$MUTE_STATE_FILE"
+            echo "muted"
+            ;;
+        off)
+            hw_mute unmute || { echo "could not reach the default input device" >&2; return 1; }
+            rm -f "$MUTE_STATE_FILE"
+            echo "unmuted"
+            ;;
+    esac
+}
+
+mute_status() {
+    [[ -e "$MUTE_STATE_FILE" ]] && echo "muted" || echo "live"
+}
+
+# ---------------------------------------------------------------------------
+# Diagnostics
+# ---------------------------------------------------------------------------
+
+agent_state() {
+    local record
+    record=$(launchctl print "gui/$UID/$1" 2>/dev/null)
+    if [[ -z "$record" ]]; then
+        echo "not loaded"
+    elif [[ "$record" == *"penalty box"* || "$record" == *"spawn failed"* ]]; then
+        echo "DEAD (launchd gave up spawning it)"
+    elif [[ "$record" == *"state = running"* ]]; then
+        echo "running (pid $(printf '%s' "$record" | awk -F'= ' '/^\t*pid = / { print $2; exit }'))"
+    else
+        echo "loaded but not running"
+    fi
+}
+
+# Measure the room so the gate threshold is a number rather than a guess.
+#
+# The whole-recording peak is useless for this: one keyboard clack, or the
+# confirmation sound from a mute toggle leaking back in through the speakers,
+# sets it 30dB too high and the suggestion comes out meaningless. So this takes
+# the peak of each short window and reports a high percentile of those, which a
+# single transient cannot move.
+levels() {
+    local secs="${1:-5}" mic tmp
+    mic=$(resolve_mic)
+    tmp="$(mktemp -t micctl)".wav
+
+    if ! device_exists "$mic" input; then
+        echo "input device '$mic' not found" >&2
+        return 1
+    fi
+    # Measuring a muted mic returns the 16-bit floor and suggests a threshold
+    # around -91, which would be silently wrong rather than obviously wrong.
+    if [[ "$(mute_status)" == muted ]]; then
+        echo "the microphone is muted; unmute it first (Option+B, or micctl mute off)" >&2
+        return 1
+    fi
+
+    echo "Measuring '$mic' for ${secs}s -- stay quiet."
+    # Let any sound that accompanied the command that got us here die away
+    # before the mic opens, or we measure ourselves.
+    sleep 0.5
+
+    if ! sox -q -t coreaudio "$mic" -b 16 -r "$RATE" -c 1 "$tmp" trim 0 "$secs" 2>/dev/null; then
+        echo "could not record from '$mic'" >&2
+        rm -f "$tmp"
+        return 1
+    fi
+
+    local win=0.25 windows peaks
+    windows=$(awk -v s="$secs" -v w="$win" 'BEGIN { print int(s / w) }')
+    peaks=$(
+        for (( i = 0; i < windows; i++ )); do
+            sox "$tmp" -n trim "$(awk -v i="$i" -v w="$win" 'BEGIN { print i * w }')" "$win" \
+                stats 2>&1 | awk '/Pk lev dB/ { print $4 }'
+        done | grep -E '^-?[0-9.]+$' | sort -n
+    )
+    local rms
+    rms=$(sox "$tmp" -n stats 2>&1 | awk '/RMS lev dB/ { print $4 }')
+    rm -f "$tmp"
+
+    if [[ -z "$peaks" ]]; then
+        echo "no measurable signal -- is the mic muted?" >&2
+        return 1
+    fi
+
+    # p90 of the window peaks is the floor the gate has to stay above; the max
+    # is reported alongside it purely so a stray bang is visible as such.
+    local p50 p90 pmax suggested
+    p50=$(printf '%s\n' "$peaks" | awk '{ a[NR] = $1 } END { print a[int(NR * 0.5) + (NR > 1)] }')
+    p90=$(printf '%s\n' "$peaks" | awk '{ a[NR] = $1 } END { print a[int(NR * 0.9) + (NR > 1 && NR * 0.9 < NR)] }')
+    pmax=$(printf '%s\n' "$peaks" | tail -1)
+    # +10, not +5. The threshold is where the curve reaches unity, and the ramp
+    # runs GATE_WIDTH dB below it, so the floor wants to sit inside that ramp
+    # rather than right at the top of it. Clearing p90 by 10 puts a floor of
+    # -49dBFS at about -20dB of attenuation with the defaults, which is gone
+    # without ever being switched off.
+    suggested=$(awk -v p="$p90" 'BEGIN { printf "%.0f", p + 10 }')
+
+    printf '  window peaks:  median %s, p90 %s, max %s dBFS\n' "$p50" "$p90" "$pmax"
+    printf '  overall RMS:   %s dBFS\n' "$rms"
+    echo
+    # The gate acts on the envelope, so it is peak that has to clear the
+    # threshold; 5dB of headroom over p90 keeps the floor from opening it.
+    printf '  suggested GATE_THRESHOLD: %s   (currently %s)\n' "$suggested" "$GATE_THRESHOLD"
+    printf '  with GATE_WIDTH=%s, that ramps from %s dBFS up to untouched\n' \
+        "$GATE_WIDTH" "$(awk -v t="$suggested" -v w="$GATE_WIDTH" 'BEGIN { printf "%.0f", t - w }')"
+    if awk -v s="$suggested" 'BEGIN { exit !(s > -20) }'; then
+        echo
+        echo "  That is high for a noise floor -- something was making noise."
+        echo "  Re-run in a quiet moment before trusting it."
+    fi
+    echo
+    echo "  To keep it:  echo 'GATE_THRESHOLD=$suggested' >> ~/.config/audio/local.conf && micctl restart"
+}
+
+status() {
+    local mic out veto
+    mic=$(resolve_mic)
+    out=$(resolve_monitor_out)
+    veto=$(monitor_veto "$out")
+
+    echo "Mute"
+    printf '  state          %s (last set here; CoreAudio mute is write-only)\n' "$(mute_status)"
+    printf '  muting         %s\n' "$(SwitchAudioSource -t input -c 2>/dev/null)"
+    echo
+    echo "Chain"
+    printf '  mic            %s%s\n' "$mic" \
+        "$(device_exists "$mic" input && echo "" || echo "  [MISSING]")"
+    printf '  sink           %s%s\n' "$SINK_DEVICE" \
+        "$(device_exists "$SINK_DEVICE" output && echo "" || echo "  [NOT INSTALLED]")"
+    printf '  gate           unity at %s dBFS, -%s dB floor over a %s dB ramp, %s dB knee\n' \
+        "$GATE_THRESHOLD" "$GATE_RANGE" "$GATE_WIDTH" "$GATE_KNEE"
+    printf '  envelope       attack %ss, decay %ss, highpass %sHz\n' \
+        "$GATE_ATTACK" "$GATE_DECAY" "$HIGHPASS_HZ"
+    printf '  gain           %s dB (after the gate)\n' "$MIC_GAIN"
+    printf '  agent          %s\n' "$(agent_state com.dotfiles.mic-chain)"
+    echo
+    echo "Monitor"
+    printf '  dock           %s%s\n' "$(dock_state)" \
+        "$( (( MONITOR_REQUIRE_DOCK )) && echo "  (required)" || echo "  (not required)" )"
+    printf '  output         %s\n' "${out:-(none)}"
+    printf '  usable         %s\n' "${veto:-yes}"
+    printf '  agent          %s\n' "$(agent_state com.dotfiles.mic-monitor)"
+    echo
+    if [[ "$(SwitchAudioSource -t input -c 2>/dev/null)" == "$SINK_DEVICE" ]]; then
+        echo "$SINK_DEVICE is the default input, so apps need no per-app setup."
+    else
+        echo "NOTE: $SINK_DEVICE is not the default input, so apps will not get"
+        echo "      the gate unless each one selects it by hand."
+    fi
+}
+
+usage() {
+    cat <<USAGE
+micctl -- microphone chain, monitoring and mute
+
+  micctl mute [toggle|on|off|status]   default: toggle  (bound to Option+B)
+  micctl status                        devices, gate settings, agent health
+  micctl levels [seconds]              measure the noise floor, suggest a threshold
+  micctl start|stop|restart [chain|monitor|all]
+  micctl chain                         run the chain in the foreground (launchd)
+  micctl monitor                       run monitoring in the foreground (launchd)
+
+Settings live in ~/.config/audio/local.conf; see audio/README.md.
+USAGE
+}
+
+agents_for() {
+    case "${1:-all}" in
+        chain)   echo com.dotfiles.mic-chain ;;
+        monitor) echo com.dotfiles.mic-monitor ;;
+        all|"")  echo com.dotfiles.mic-chain com.dotfiles.mic-monitor ;;
+        *)       echo "unknown target: $1" >&2; return 1 ;;
+    esac
+}
+
+case "${1:-status}" in
+    mute)
+        case "${2:-toggle}" in
+            toggle) mute_toggle ;;
+            on|off) mute_set "$2" ;;
+            status) mute_status ;;
+            *) usage; exit 1 ;;
+        esac
+        ;;
+    chain)   supervise chain resolve_mic : chain_sox ;;
+    monitor) supervise monitor resolve_monitor_out monitor_veto monitor_sox ;;
+    start|stop|restart)
+        targets=$(agents_for "${2:-all}") || exit 1
+        for a in $targets; do
+            plist="$HOME/Library/LaunchAgents/$a.plist"
+            case "$1" in
+                # These jobs are KeepAlive, so TERM is not a stop -- launchd
+                # just spawns them straight back. Only booting the job out of
+                # the domain actually stops it, and bootstrapping it back in is
+                # what then starts it.
+                start)
+                    if [[ ! -f "$plist" ]]; then
+                        echo "no agent installed for $a (run ./install.sh audio)" >&2
+                        continue
+                    fi
+                    launchctl bootstrap "gui/$UID" "$plist" 2>/dev/null \
+                        && echo "started $a" || echo "$a was already running" ;;
+                stop)
+                    launchctl bootout "gui/$UID/$a" 2>/dev/null \
+                        && echo "stopped $a" || echo "$a was not running" ;;
+                restart)
+                    launchctl kickstart -k "gui/$UID/$a" >/dev/null 2>&1 \
+                        && echo "restarted $a" || echo "could not restart $a (not loaded?)" >&2 ;;
+            esac
+        done
+        ;;
+    levels)  levels "${2:-5}" ;;
+    status)  status ;;
+    -h|--help|help) usage ;;
+    *) usage; exit 1 ;;
+esac
