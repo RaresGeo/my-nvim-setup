@@ -20,11 +20,28 @@ CLI="${G6_CLI:-$HOME/.local/share/g6-cli-venv/bin/soundblaster-x-g6-cli}"
 RGB_LIVE="${G6_RGB_LIVE:-255 255 255}"
 RGB_MUTED="${G6_RGB_MUTED:-255 0 0}"
 
-wpctl set-mute "$SOURCE" toggle || exit 1
+# Check the source resolves before touching anything. The card lives behind a USB
+# switch, so "no default source" is a normal state here rather than a failure --
+# and `wpctl set-mute` exits 0 even when it could not translate the id, so its
+# status cannot be trusted to notice. Without this the script reported "live" and
+# painted the lamp white while having muted nothing.
+if ! before="$(wpctl get-volume "$SOURCE" 2>/dev/null)" || [[ -z "$before" ]]; then
+    echo "g6-mute: no default audio source -- is the G6 on this machine?" >&2
+    exit 1
+fi
+
+wpctl set-mute "$SOURCE" toggle
 
 # Read the state back rather than tracking it: wpctl owns it, and a toggle from
-# anywhere else (pavucontrol, another binding) would desync a local record.
-if wpctl get-volume "$SOURCE" 2>/dev/null | grep -q '\[MUTED\]'; then
+# anywhere else (pavucontrol, another binding) would desync a local record. Also
+# confirms the toggle actually landed, which its exit status does not.
+after="$(wpctl get-volume "$SOURCE" 2>/dev/null)"
+if [[ -z "$after" || "$after" == "$before" ]]; then
+    echo "g6-mute: mute did not change ($before)" >&2
+    exit 1
+fi
+
+if grep -q '\[MUTED\]' <<<"$after"; then
     want="$RGB_MUTED"; state=muted
 else
     want="$RGB_LIVE"; state=live
