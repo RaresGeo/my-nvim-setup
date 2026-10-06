@@ -27,6 +27,35 @@ link nvim "$NVIM_CONFIG"
 # runtime from ~/.local/state/omarchy (see nvim/lua/plugins/colorscheme.lua), and
 # the hook that hotswaps a running instance belongs to the omarchy module.
 
+# typescript-language-server drives TypeScript's own tsserver.js and ships no
+# compiler itself. Homebrew's `typescript` is the native 7.x port now, which has
+# no tsserver.js anywhere in it, so the server's bundled copy is a dead end and
+# it exits at startup. 6.0.3 is the last release that still ships tsserver.js;
+# lsp/ts_ls.lua prefers whatever TypeScript a project installs and falls back to
+# this one, which is what makes single files and uninstalled projects work.
+TSSERVER_VERSION="6.0.3"
+TSSERVER_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/nvim/tsserver"
+TSSERVER_PKG_JSON="$TSSERVER_DIR/node_modules/typescript/package.json"
+
+if ! command -v typescript-language-server &>/dev/null; then
+    warn "typescript-language-server is not installed; TypeScript LSP will not start."
+    warn "  macOS: brew install typescript-language-server"
+    warn "  Arch:  sudo pacman -S typescript-language-server"
+fi
+
+if [[ " $* " == *" --no-plugins "* ]]; then
+    log "Skipping the fallback TypeScript install (--no-plugins)."
+elif ! command -v npm &>/dev/null; then
+    warn "npm is not installed; skipping the fallback TypeScript for typescript-language-server."
+elif [[ "$(sed -n 's/.*"version": *"\([^"]*\)".*/\1/p' "$TSSERVER_PKG_JSON" 2>/dev/null | head -1)" == "$TSSERVER_VERSION" ]]; then
+    log "Fallback TypeScript $TSSERVER_VERSION already installed."
+else
+    log "Installing fallback TypeScript $TSSERVER_VERSION for typescript-language-server..."
+    mkdir -p "$TSSERVER_DIR"
+    npm install --silent --no-fund --no-audit --prefix "$TSSERVER_DIR" "typescript@$TSSERVER_VERSION" || \
+        warn "Fallback TypeScript install failed; ts_ls will only work where a project installs TypeScript."
+fi
+
 # Bootstrap lazy.nvim and install plugins without opening a UI. Skippable
 # because it needs the network and takes a while.
 if [[ " $* " == *" --no-plugins "* ]]; then

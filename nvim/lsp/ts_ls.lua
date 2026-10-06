@@ -1,3 +1,5 @@
+local tsserver = require("core.tsserver")
+
 local function organize_imports_ts()
     local clients = vim.lsp.get_clients({ bufnr = 0 })
     local is_node = false
@@ -26,6 +28,7 @@ end
 return {
     capabilities = _G.lsp_capabilities,
     cmd = { "typescript-language-server", "--stdio" },
+    before_init = tsserver.before_init,
     filetypes = {
         "javascript",
         "javascriptreact",
