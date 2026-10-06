@@ -69,6 +69,7 @@ return {
 
         -- Enable all LSP servers (configs are in lsp/ directory)
         vim.lsp.enable("ts_ls")
+        vim.lsp.enable("oxfmt")
         vim.lsp.enable("js_standalone")
         vim.lsp.enable("denols")
         vim.lsp.enable("emmet_ls")

@@ -11,7 +11,7 @@ vim.keymap.set('i', '<Down>', [[<ESC>:echoe "Use j"<CR>]])
 
 -- General keymaps
 vim.keymap.set("n", "<leader>f", function()
-    vim.lsp.buf.format()
+    require("core.format").format()
 end, { desc = "Format buffer" })
 
 vim.keymap.set("n", ",m", function()
