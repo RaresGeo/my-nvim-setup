@@ -37,6 +37,17 @@ RGB_CLAIM="${G6_RGB_CLAIM:-255 255 255}"   # white = mic live, matching the Mac
 # The three non-mic capture switches matter as much as the source selection:
 # leaving 'What U Hear' enabled mixes system output back into the capture,
 # which with a monitor/loopback running turns into a feedback loop.
+# The analog sidetone's control. Found rather than hardcoded: it is a vendor
+# string, this was written with the card on the other machine so it could not be
+# read out of amixer, and a wrong name would be silently inert -- the worst shape
+# of bug for something whose whole job is to not be on. Matches a playback switch
+# on the mic input, and yields nothing if the card has no such control.
+sidetone_control() {
+    amixer -c "$1" controls 2>/dev/null |
+        sed -n "s/.*name='\([^']*[Mm]ic[^']*Playback Switch\)'.*/\1/p" | head -1
+}
+
+# $1 = card index.
 controls() {
     cat <<CONTROLS
 PCM Capture Source|External Mic|1
@@ -46,8 +57,11 @@ Input Gain Control|${GAIN}|${GAIN}
 Line In Capture Switch|off|off
 S/PDIF In Capture Switch|off|off
 What U Hear Capture Switch|off|off
-External Mic Playback Switch|off|off
 CONTROLS
+    local st
+    st="$(sidetone_control "$1")"
+    [ -n "$st" ] && printf '%s|off|off\n' "$st"
+    return 0
 }
 
 find_card() {
@@ -80,7 +94,7 @@ fix_if_drifted() {
         [ "$(current_value "$card" "$name")" = "$expect" ] && continue
         echo "g6-mic-guard: restoring '$name' -> $write" >&2
         amixer -c "$card" cset name="$name" "$write" >/dev/null 2>&1
-    done < <(controls)
+    done < <(controls "$card")
 }
 
 # The lamp is HID, not a mixer control, so it is not part of the drift loop --
@@ -108,6 +122,11 @@ while true; do
     if [ "$had_card" -eq 0 ]; then
         had_card=1
         claim_lamp
+        # Record which control the sidetone turned out to be, once per arrival.
+        # It is the one name here that was not read off the hardware, so saying
+        # what it resolved to is worth a line.
+        st="$(sidetone_control "$CARD")"
+        echo "g6-mic-guard: sidetone control: ${st:-none found, leaving sidetone alone}" >&2
     fi
 
     fix_if_drifted "$CARD"
