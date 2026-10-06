@@ -533,5 +533,12 @@ case "$cmd" in
             END { flush() }
         '
         ;;
-    *) sed -n '2,21p' "$0" | sed 's|^# \?||'; exit 1 ;;
+    # Print the header block rather than a line range. The range was hardcoded
+    # and silently truncated the usage text every time a line was added above it,
+    # which happened three times. This stops at the first line that is neither a
+    # comment nor blank, so it cannot drift. awk also strips the "# " correctly:
+    # BSD sed has no \? quantifier, so the old `s|^# \?||` matched a literal "?"
+    # and left every line with its comment marker on.
+    *) awk 'NR > 1 { if ($0 !~ /^#/ && $0 !~ /^[[:space:]]*$/) exit; sub(/^# ?/, ""); print }' "$0"
+       exit 1 ;;
 esac
