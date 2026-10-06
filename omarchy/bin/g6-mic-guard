@@ -1,0 +1,142 @@
+#!/bin/bash
+# Keep the Sound BlasterX G6's analog capture path pinned to the front mic jack,
+# its hardware sidetone off, and its lamp white while this machine holds it.
+#
+# PipeWire's generic ACP profile for this card exposes only one analog input
+# port ("Line In"), and re-asserts 'PCM Capture Source' = Line In every time it
+# configures the device: on USB replug, on profile change, and on every
+# pipewire/wireplumber restart. Whenever that happens the microphone drops to
+# near silence, because it is then recording the unconnected rear line-in jack.
+# This watches the card's mixer events and puts the routing back.
+#
+# The card is shared with the MacBook over a USB switch, and the two machines
+# want opposite things from it:
+#
+#   * This machine monitors the mic through a PipeWire loopback, so it hears the
+#     EasyEffects gate. The card's own analog sidetone must therefore stay OFF --
+#     running both comb-filters the voice into something thin and echoey.
+#   * The Mac uses the analog sidetone instead, so it switches it ON when it
+#     takes the card.
+#
+# Those are USB-audio-class controls, which means volatile: the device resets
+# them on every re-enumeration, and crossing the switch is a re-enumeration. So
+# neither machine can assume anything -- each asserts what it wants on arrival.
+# That is what the 'External Mic Playback Switch' line below is for.
+#
+# Managed by the g6-mic-guard.service user unit.
+
+GAIN="${G6_MIC_GAIN:-3}"          # 'Input Gain Control', 0-3. NOTE: 0 is muted, not 0 dB.
+MIC_VOL="${G6_MIC_VOL:-51}"       # 'External Mic Capture Volume', 0-57 = -48..+9 dB, 1 dB/step
+CLI="${G6_CLI:-$HOME/.local/share/g6-cli-venv/bin/soundblaster-x-g6-cli}"
+RGB_CLAIM="${G6_RGB_CLAIM:-255 255 255}"   # white = mic live, matching the Mac
+
+# MIC_VOL 51 is +3.00 dB ('External Mic Capture Volume' value = dB + 48).
+
+# name | value to write | value 'cget' should report back
+#
+# The three non-mic capture switches matter as much as the source selection:
+# leaving 'What U Hear' enabled mixes system output back into the capture,
+# which with a monitor/loopback running turns into a feedback loop.
+# The analog sidetone's control. Found rather than hardcoded: it is a vendor
+# string, this was written with the card on the other machine so it could not be
+# read out of amixer, and a wrong name would be silently inert -- the worst shape
+# of bug for something whose whole job is to not be on. Matches a playback switch
+# on the mic input, and yields nothing if the card has no such control.
+sidetone_control() {
+    amixer -c "$1" controls 2>/dev/null |
+        sed -n "s/.*name='\([^']*[Mm]ic[^']*Playback Switch\)'.*/\1/p" | head -1
+}
+
+# $1 = card index.
+controls() {
+    cat <<CONTROLS
+PCM Capture Source|External Mic|1
+External Mic Capture Switch|on|on
+External Mic Capture Volume|${MIC_VOL},${MIC_VOL}|${MIC_VOL},${MIC_VOL}
+Input Gain Control|${GAIN}|${GAIN}
+Line In Capture Switch|off|off
+S/PDIF In Capture Switch|off|off
+What U Hear Capture Switch|off|off
+CONTROLS
+    local st
+    st="$(sidetone_control "$1")"
+    [ -n "$st" ] && printf '%s|off|off\n' "$st"
+    return 0
+}
+
+find_card() {
+    local c
+    for c in /proc/asound/card[0-9]*; do
+        [ -r "$c/id" ] || continue
+        [ "$(cat "$c/id" 2>/dev/null)" = "G6" ] || continue
+        echo "${c##*/card}"
+        return 0
+    done
+    return 1
+}
+
+current_value() {
+    amixer -c "$1" cget name="$2" 2>/dev/null | sed -n 's/^ *: values=//p' | head -1
+}
+
+# Re-assert every control that has drifted. Writing only what is actually
+# wrong matters: our own writes raise the mixer events that wake us up, so
+# unconditional writes would never settle.
+#
+# A control this card does not expose is skipped rather than written: an absent
+# one reads back empty, which would never match and would log a restore on every
+# single mixer event.
+fix_if_drifted() {
+    local card=$1 name write expect
+    while IFS='|' read -r name write expect; do
+        [ -n "$name" ] || continue
+        [ -n "$(current_value "$card" "$name")" ] || continue
+        [ "$(current_value "$card" "$name")" = "$expect" ] && continue
+        echo "g6-mic-guard: restoring '$name' -> $write" >&2
+        amixer -c "$card" cset name="$name" "$write" >/dev/null 2>&1
+    done < <(controls "$card")
+}
+
+# The lamp is HID, not a mixer control, so it is not part of the drift loop --
+# it persists in the device's firmware and does not need re-asserting. It does
+# need setting when the card ARRIVES, because the Mac leaves it red if it was
+# muted there. Only on the absent -> present edge, so this is not a per-event cost.
+#
+# Scoped to --lighting-rgb on purpose: the same CLI reaches the CrystalVoice DSP,
+# which is off in this device's firmware deliberately.
+claim_lamp() {
+    # shellcheck disable=SC2086 -- $RGB_CLAIM is three separate arguments.
+    [ -x "$CLI" ] && "$CLI" --lighting-rgb $RGB_CLAIM >/dev/null 2>&1 \
+        && echo "g6-mic-guard: card claimed, lamp -> $RGB_CLAIM" >&2
+    return 0
+}
+
+had_card=0
+while true; do
+    if ! CARD="$(find_card)"; then
+        had_card=0
+        sleep 5
+        continue
+    fi
+
+    if [ "$had_card" -eq 0 ]; then
+        had_card=1
+        claim_lamp
+        # Record which control the sidetone turned out to be, once per arrival.
+        # It is the one name here that was not read off the hardware, so saying
+        # what it resolved to is worth a line.
+        st="$(sidetone_control "$CARD")"
+        echo "g6-mic-guard: sidetone control: ${st:-none found, leaving sidetone alone}" >&2
+    fi
+
+    fix_if_drifted "$CARD"
+
+    # Block on mixer events and re-check after each one. The timeout is a
+    # safety net so we also re-check periodically if an event is ever missed;
+    # the monitor exits on its own when the card is unplugged.
+    timeout 60 alsactl monitor "hw:$CARD" 2>/dev/null | while read -r _event; do
+        fix_if_drifted "$CARD"
+    done
+
+    sleep 1
+done

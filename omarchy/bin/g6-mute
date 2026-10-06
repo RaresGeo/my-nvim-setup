@@ -1,0 +1,54 @@
+#!/bin/bash
+# Toggle the microphone mute and move the Sound BlasterX G6's lamp with it.
+# Bound to SUPER+B (omarchy/hypr/bindings.lua).
+#
+# The lamp is the point. Muting is invisible otherwise: this machine monitors the
+# mic through a PipeWire loopback, so a mute does silence the sidetone, but that
+# only tells you while you happen to be talking. White means live, red means
+# muted, and it is the same scheme the Mac uses -- the lamp means one thing no
+# matter which machine currently holds the card.
+#
+# Lighting is a vendor HID setting reached through the third-party CLI, and it is
+# stored in the device's own firmware. Deliberately scoped to --lighting-rgb:
+# the same CLI can reach the CrystalVoice DSP, which is switched OFF in this
+# device's firmware on purpose because it made the mic sound like a phone.
+
+set -uo pipefail
+
+SOURCE="${G6_MUTE_SOURCE:-@DEFAULT_AUDIO_SOURCE@}"
+CLI="${G6_CLI:-$HOME/.local/share/g6-cli-venv/bin/soundblaster-x-g6-cli}"
+RGB_LIVE="${G6_RGB_LIVE:-255 255 255}"
+RGB_MUTED="${G6_RGB_MUTED:-255 0 0}"
+
+# Check the source resolves before touching anything. The card lives behind a USB
+# switch, so "no default source" is a normal state here rather than a failure --
+# and `wpctl set-mute` exits 0 even when it could not translate the id, so its
+# status cannot be trusted to notice. Without this the script reported "live" and
+# painted the lamp white while having muted nothing.
+if ! before="$(wpctl get-volume "$SOURCE" 2>/dev/null)" || [[ -z "$before" ]]; then
+    echo "g6-mute: no default audio source -- is the G6 on this machine?" >&2
+    exit 1
+fi
+
+wpctl set-mute "$SOURCE" toggle
+
+# Read the state back rather than tracking it: wpctl owns it, and a toggle from
+# anywhere else (pavucontrol, another binding) would desync a local record. Also
+# confirms the toggle actually landed, which its exit status does not.
+after="$(wpctl get-volume "$SOURCE" 2>/dev/null)"
+if [[ -z "$after" || "$after" == "$before" ]]; then
+    echo "g6-mute: mute did not change ($before)" >&2
+    exit 1
+fi
+
+if grep -q '\[MUTED\]' <<<"$after"; then
+    want="$RGB_MUTED"; state=muted
+else
+    want="$RGB_LIVE"; state=live
+fi
+
+# shellcheck disable=SC2086 -- $want is three separate arguments.
+[[ -x "$CLI" ]] && "$CLI" --lighting-rgb $want >/dev/null 2>&1 || true
+
+# For the Hyprland binding's own notification, if it wants one.
+printf '%s\n' "$state"
