@@ -58,7 +58,7 @@ defaultLayoutType = "dwindle"
 hotkeysEnabled = true
 hyperKeyModifiers = "Control+Option+Shift+Command"
 ipcEnabled = true
-preventSleepEnabled = false
+preventSleepEnabled = true
 systemHyperTrigger = "Caps Lock"
 updateChecksEnabled = true
 
