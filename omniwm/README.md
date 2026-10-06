@@ -173,6 +173,12 @@ A window assigned into a slot that is currently *revealed* stays on screen,
 which at login would leave the calendar floating over everything, so the
 watcher conceals the slot when a freshly pinned window comes up visible.
 
+The apps are opened once, when the watcher starts, so **quitting the calendar
+keeps it quit** — the watcher pins windows, it does not resurrect an app you
+closed on purpose, the same way it does not undo an Option+Shift+S. Start it
+again however you like and the resident watcher pins it within a second or
+two; otherwise it is back at the next login.
+
 Two traps, if you extend this:
 
 - **`query windows --scratchpad` is not trustworthy.** It returned an empty
