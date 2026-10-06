@@ -42,6 +42,7 @@ untouched — same convention the AeroSpace module used.
 | control + option + l | Cycle workspace layout (dwindle / niri / default) |
 | control + option + t | Toggle column tabbed (niri) |
 | control + option + space | Command palette |
+| control + option + return | Quake terminal |
 | option + shift + o | Overview |
 
 Everything else is an OmniWM default — see Settings > Hotkeys in the app for
@@ -50,8 +51,10 @@ the full list (there's no hotkey-triggered way to print it).
 **Option+\` is deliberately left free.** OmniWM's quake terminal shipped on it
 by default, and OmniWM grabs its hotkeys globally, so nothing reaches the
 focused app — which silently killed Neovim's `<M-\`>` terminal-split toggle
-(`nvim/lua/plugins/telescope.lua`). `toggleQuakeTerminal` is `Unassigned` and
-`[quakeTerminal] enabled = false`; don't rebind it here.
+(`nvim/lua/plugins/telescope.lua`). The quake terminal lives on
+**Control+Option+Return** instead: no OmniWM hotkey binds Return, the only
+Karabiner `return_or_enter` rule requires exactly Command, and no Neovim
+mapping uses `<C-M-CR>`. Don't rebind it back onto Option+\`.
 
 ## Karabiner pairs with this
 
