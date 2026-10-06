@@ -63,9 +63,30 @@ mv ~/.config/nvim ~/.config/dotfiles
 | `zsh` | `~/.zshrc`, oh-my-zsh and plugins | any |
 | `herdr` | `~/.config/herdr/config.toml` | Omarchy (ships with it) or macOS (Homebrew) |
 | `omarchy` | Hyprland overrides, theme hooks | Omarchy |
-| [`macos`](macos/README.md) | Alacritty, theme snapshot, CLI tools, system defaults | macOS |
-| [`karabiner`](karabiner/README.md) | Built-in keyboard remap, terminal launchers, Alacritty close fix | macOS |
+| [`macos`](macos/README.md) | Alacritty, theme snapshot, CLI tools, system defaults, dock-state switch | macOS |
+| [`audio`](audio/README.md) | Gated mic into BlackHole, the card's own sidetone, Option+B mute with a lamp | macOS |
+| [`karabiner`](karabiner/README.md) | Built-in keyboard remap, terminal launchers, Alacritty close fix, notification dismiss | macOS |
 | [`omniwm`](omniwm/README.md) | Tiling window manager, dwindle layout | macOS |
+
+## Per-device overrides
+
+Not everything belongs in a repo that several machines share. `zsh/local.zsh`
+is sourced at the end of `.zshrc` if it exists, and is gitignored, so a single
+host can add what only it needs — an account-specific environment variable, a
+path that exists nowhere else, a one-off alias — without the repo carrying it.
+
+```bash
+cat >> ~/.config/dotfiles/zsh/local.zsh <<'SH'
+alias deploy='./scripts/deploy.sh --host thisbox'
+SH
+```
+
+The file is resolved relative to `.zshrc` itself, through the symlink, so it
+works wherever the checkout lives. It is optional: nothing warns when it is
+absent.
+
+Keep it small. Anything that would help a second machine belongs in a module
+instead, where it is tracked and installed.
 
 ## Omarchy
 
@@ -139,7 +160,8 @@ left out, for the same reason.
 │   ├── install.sh
 │   ├── omarchy.sh
 │   ├── .zshrc              # -> ~/.zshrc
-│   └── zsh-colors.tpl      # themed template
+│   ├── zsh-colors.tpl      # themed template
+│   └── local.zsh           # per-device, untracked (optional)
 ├── herdr/
 │   ├── install.sh
 │   └── config.toml         # -> ~/.config/herdr/config.toml
@@ -152,12 +174,13 @@ left out, for the same reason.
 │   ├── Brewfile
 │   ├── alacritty/          # -> ~/.config/alacritty/
 │   ├── theme/kanagawa/     # -> ~/.local/state/omarchy/current/theme
+│   ├── dock/dockctl        # -> ~/.local/bin/dockctl, plus its launchd agent
 │   └── defaults.sh, build-alacritty.sh, doctor.sh
 ├── karabiner/
 │   ├── install.sh          # merges into ~/.config/karabiner/karabiner.json
 │   ├── builtin-keyboard.json
 │   ├── rules/*.json        # -> ~/.config/karabiner/assets/complex_modifications/
-│   └── bin/open-browser    # -> ~/.local/bin/open-browser
+│   └── bin/*               # -> ~/.local/bin/ (open-browser, dismiss-notification)
 └── omniwm/
     ├── install.sh
     ├── settings.toml           # -> ~/.config/omniwm/settings.toml
