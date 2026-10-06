@@ -1,6 +1,9 @@
+local tsserver = require("core.tsserver")
+
 return {
     capabilities = _G.lsp_capabilities,
     cmd = { "typescript-language-server", "--stdio" },
+    before_init = tsserver.before_init,
     filetypes = {
         "javascript",
     },
