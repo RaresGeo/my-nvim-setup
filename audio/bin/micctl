@@ -11,9 +11,13 @@
 #            makes the gate reach the other end of the call, exactly like
 #            VoiceMeeter's virtual input or an EasyEffects source does. Without
 #            it a gate could only ever clean up what *you* hear.
-#   monitor  BlackHole 2ch -> headphones. It deliberately reads the sink rather
-#            than the mic, so what you hear is the processed signal -- if the
-#            gate is clamping your speech you find out immediately.
+#   sidetone the device's own analog monitoring of the mic back to its output,
+#            switched on and off with the mute key. Zero latency, because the
+#            signal never reaches the host -- and for the same reason it carries
+#            no gate. That trade is deliberate: Meet and Slack gate on their own
+#            side, and hearing yourself with no delay matters more here than
+#            hearing the gate work. A software relay through the sink was tried
+#            first and is in the history if the trade ever needs revisiting.
 #   mute     sets CoreAudio's own mute flag on whatever is the default input,
 #            which in this setup is the sink -- so it silences precisely what
 #            every app reads. A real mute flag rather than a volume of zero,
@@ -21,7 +25,7 @@
 #            so an app deliberately pointed at the mic itself still hears you;
 #            see hw_mute() for why nothing here can reach that.
 #
-# chain and monitor are run by launchd (see ../install.sh) and supervise their
+# The chain is run by launchd (see ../install.sh) and supervises its
 # own sox process in a loop. sox exits whenever CoreAudio reconfigures under it
 # -- headphones unplugged, driver reloaded, sample rate changed -- and handling
 # that here means launchd never sees the process die. That is on purpose: a
@@ -74,22 +78,41 @@ MIC_FALLBACK="${MIC_FALLBACK:-MacBook Pro Microphone}"
 # puts it back. Set this to "External Mic" for a G6 with a headset in the front
 # jack; `micctl status` lists what the device offers.
 MIC_INPUT_SOURCE="${MIC_INPUT_SOURCE:-}"
-# Built by ../install.sh; macOS ships no CLI that can set a data source.
-INPUT_SOURCE_HELPER="${MIC_INPUT_SOURCE_HELPER:-$HOME/.local/libexec/micctl-input-source}"
+# Built by ../install.sh. macOS exposes the input source and the sidetone in
+# System Settings but ships no CLI for either.
+COREAUDIO_CTL="${MIC_COREAUDIO_CTL:-$HOME/.local/libexec/micctl-coreaudio}"
 
-# Left empty, monitoring follows the default output.
-MONITOR_DEVICE="${MONITOR_DEVICE:-}"
-MONITOR_GAIN="${MONITOR_GAIN:-0}"
+# The mic's own lamp as a mute indicator. Mute already silences the sidetone --
+# monitoring reads the sink and the mute flag is on the sink -- but that only
+# tells you while you are talking. A colour tells you at a glance.
+#
+# Both empty means "do not touch the lighting", which is right for a device that
+# has none. "R G B", 0-255 each. Needs the third-party G6 CLI, which is the only
+# way to reach these: the lamp is a vendor HID setting, not an audio control.
+MIC_RGB_MUTED="${MIC_RGB_MUTED:-}"
+MIC_RGB_LIVE="${MIC_RGB_LIVE:-}"
+G6_CLI="${G6_CLI:-$HOME/.local/share/g6-cli-venv/bin/soundblaster-x-g6-cli}"
 
-# Playing the mic out of the built-in speakers is an acoustic feedback loop
-# with a noise gate holding the door open, so monitoring refuses to start on
-# them unless this is set to 1.
-MONITOR_ALLOW_SPEAKERS="${MONITOR_ALLOW_SPEAKERS:-0}"
+# The device's analog mic monitoring -- the sidetone. Empty means "do not manage
+# it", which is right for a device that has none.
+#
+# Volatile like the input source, and shared: the desk machine turns it OFF when
+# it takes the card, because it monitors in software there. So this has to be
+# asserted rather than assumed, and the mute key owns it -- muting the host
+# cannot reach an analog tap that never leaves the device.
+# Keep the sink as the system default input. This is what makes the gate reach
+# apps with no per-app setup, and it does not stay put on its own: macOS re-picks
+# the default input when a device appears, so the card returning across the USB
+# switch hands it to the G6 directly and quietly takes the chain out of the path.
+# Nothing looks broken -- apps still get a working microphone, just the raw one,
+# ungated -- and the first you know of it is in a meeting.
+#
+# Asserted when the chain (re)starts, which is exactly when the device set
+# changed. Set to 0 to choose the default input yourself.
+MIC_CLAIM_DEFAULT_INPUT="${MIC_CLAIM_DEFAULT_INPUT:-1}"
 
-# Sidetone is only wanted at the desk, where there is a headset to hear it in.
-# Undocked there is nothing but the built-in speakers, so monitoring would be
-# an echo at best. Set to 0 to monitor wherever the output allows it.
-MONITOR_REQUIRE_DOCK="${MONITOR_REQUIRE_DOCK:-1}"
+MIC_SIDETONE="${MIC_SIDETONE:-}"
+MIC_SIDETONE_DB="${MIC_SIDETONE_DB:-6}"
 
 RATE="${MIC_RATE:-48000}"
 
@@ -177,52 +200,6 @@ resolve_mic() {
     printf '%s' "$MIC_FALLBACK"
 }
 
-resolve_monitor_out() {
-    if [[ -n "$MONITOR_DEVICE" ]]; then printf '%s' "$MONITOR_DEVICE"; return; fi
-    SwitchAudioSource -t output -c 2>/dev/null
-}
-
-# One definition of "docked" for the whole setup: dockctl's, which keys off the
-# desk keyboard arriving on the USB bus rather than probing displays. Falls back
-# to the state file the dock watcher maintains, and finally to "undocked",
-# because failing safe here means no sidetone -- silence, rather than the mic
-# howling into the built-in speakers.
-dock_state() {
-    local dockctl="$HOME/.local/bin/dockctl" state
-    if [[ -x "$dockctl" ]] && state=$("$dockctl" detect 2>/dev/null) && [[ -n "$state" ]]; then
-        printf '%s' "$state"
-        return
-    fi
-    local file="${XDG_STATE_HOME:-$HOME/.local/state}/dock/state"
-    if [[ -r "$file" ]]; then
-        tr -d '[:space:]' < "$file"
-        return
-    fi
-    printf 'undocked'
-}
-
-# Why the given output is unfit to monitor on, or nothing if it is fine.
-monitor_veto() {
-    local out="$1"
-    [[ -n "$out" ]] || { printf 'no default output device'; return; }
-    if (( MONITOR_REQUIRE_DOCK )) && [[ "$(dock_state)" != docked ]]; then
-        printf 'undocked, so there is no headset to monitor into (MONITOR_REQUIRE_DOCK=0 to override)'
-        return
-    fi
-    if [[ "$out" == "$SINK_DEVICE" ]]; then
-        printf 'output is the sink itself (%s), which would loop' "$out"
-        return
-    fi
-    if (( ! MONITOR_ALLOW_SPEAKERS )); then
-        case "$out" in
-            *Speakers*|*"Built-in"*)
-                printf 'output is %s: monitoring the mic through the speakers feeds back (MONITOR_ALLOW_SPEAKERS=1 to override)' "$out"
-                return
-                ;;
-        esac
-    fi
-}
-
 # ---------------------------------------------------------------------------
 # The SoX pipelines
 # ---------------------------------------------------------------------------
@@ -276,6 +253,9 @@ chain_sox() {
     # then sox's own, and `kill` reaches it. Without exec the pid belonged to the
     # subshell, killing it left sox running and reparented onto launchd, and it
     # kept the CoreAudio device open forever.
+    ensure_default_input
+    local err; err="$(sox_err_file chain)"
+    : > "$err"
     exec sox -q --buffer "$SOX_BUFFER" \
         -t coreaudio "$1" \
         -r "$RATE" -c 2 -t coreaudio "$SINK_DEVICE" \
@@ -283,15 +263,56 @@ chain_sox() {
         highpass "$HIGHPASS_HZ" \
         $(gate_effect) \
         gain "$MIC_GAIN" \
-        remix 1 1
+        remix 1 1 2>>"$err"
 }
 
-monitor_sox() {
-    # exec for the same reason as chain_sox: so the pid is sox's own.
-    exec sox -q --buffer "$SOX_BUFFER" \
-        -r "$RATE" -c 2 -t coreaudio "$SINK_DEVICE" \
-        -r "$RATE" -c 2 -t coreaudio "$1" \
-        vol "$MONITOR_GAIN" dB
+
+# How many "buffer overrun" lines in a single poll mean the stream has given up
+# rather than just hiccuped. A working pipeline logs none.
+SOX_STALL_WARNINGS="${SOX_STALL_WARNINGS:-200}"
+
+sox_err_file() { printf '%s\n' "$STATE_DIR/$1.sox.err"; }
+
+# SIGTERM is not enough for a sox that has wedged: verified by hand -- it was
+# still there three seconds after TERM and only went on KILL. A supervisor that
+# sends TERM and assumes it worked leaves the thing running, holding the device,
+# which is how the orphans got there.
+kill_sox() {
+    local pid="$1" i
+    [[ -n "$pid" ]] || return 0
+    kill "$pid" 2>/dev/null
+    for i in 1 2 3 4 5 6 7 8 9 10; do
+        kill -0 "$pid" 2>/dev/null || return 0
+        sleep 0.2
+    done
+    log "${2:-sox}" "sox $pid ignored SIGTERM, killing it"
+    kill -9 "$pid" 2>/dev/null
+}
+
+# A sox that has stopped working does not exit, so "the process is alive" is not
+# health -- and the supervisor only ever restarted on exit, so a stalled stream
+# stayed stalled for as long as the agent was up.
+#
+# Measured: a monitor sox 23 minutes old was relaying digital silence. Captured
+# at the G6's own What U Hear loopback it read -90.31 dBFS while a tone was going
+# into the sink, and it was logging "unhandled buffer overrun. Data discarded."
+# at 28KB/s. A fresh sox on the identical command line relayed the same tone at
+# -12.04 dBFS. CoreAudio had reconfigured under it -- a device appearing, a rate
+# change, an input source switch -- and sox never recovered.
+#
+# So the overrun flood is not log noise, it is the signature: a working pipeline
+# logs none of these and a stalled one logs thousands a second. Count them per
+# poll and restart when the rate says it has given up. Killing it here is enough
+# -- the supervisor's own loop sees the exit and starts a fresh one.
+stall_check() {
+    local label="$1" err n
+    err="$(sox_err_file "$label")"
+    [[ -r "$err" ]] || return 0
+    n=$(grep -c 'buffer overrun' "$err" 2>/dev/null) || n=0
+    : > "$err"
+    (( n < SOX_STALL_WARNINGS )) && return 0
+    log "$label" "sox logged $n buffer overruns in one poll; stream has stalled, restarting it"
+    kill_sox "$SOX_PID" "$label"
 }
 
 # A sox still holding a CoreAudio device is worse than no sox at all: the device
@@ -309,7 +330,7 @@ SOX_PID=""
 SOX_PIDFILE=""
 
 sox_cleanup() {
-    [[ -n "$SOX_PID" ]] && kill "$SOX_PID" 2>/dev/null
+    [[ -n "$SOX_PID" ]] && kill_sox "$SOX_PID"
     [[ -n "$SOX_PIDFILE" ]] && rm -f "$SOX_PIDFILE"
     return 0
 }
@@ -339,6 +360,13 @@ reap_stray_sox() {
         kill -0 "$pid" 2>/dev/null && kill -9 "$pid" 2>/dev/null
     fi
     rm -f "$file"
+}
+
+# What each pipeline re-checks every poll while its sox is up: state the driver
+# undoes behind us, and whether the stream is still actually carrying audio.
+chain_keep() {
+    ensure_input_source "$1"
+    stall_check chain
 }
 
 # Run one sox pipeline and restart it if the device it should be using changes
@@ -400,12 +428,12 @@ supervise() {
             [[ "$keep" != ":" ]] && "$keep" "$device"
             if [[ "$("$resolve")" != "$device" ]]; then
                 log "$label" "device changed, restarting"
-                kill "$pid" 2>/dev/null
+                kill_sox "$pid" "$label"
                 break
             fi
             if [[ "$veto" != ":" && -n "$("$veto" "$device")" ]]; then
                 log "$label" "device no longer suitable, stopping"
-                kill "$pid" 2>/dev/null
+                kill_sox "$pid" "$label"
                 break
             fi
         done
@@ -422,6 +450,9 @@ supervise() {
             local backoff=$(( SUPERVISE_RETRY * (1 << (fast_failures < 5 ? fast_failures : 5)) ))
             (( backoff > 120 )) && backoff=120
             log "$label" "exited immediately ($fast_failures in a row); retrying in ${backoff}s"
+            # sox's own complaint went to the err file rather than this log, and
+            # a broken command line is exactly when it is worth reading.
+            sed -n '1,5p' "$(sox_err_file "$label")" 2>/dev/null | sed "s/^/  $label: /"
             sleep "$backoff"
         else
             fast_failures=0
@@ -448,6 +479,73 @@ hw_mute() {
     SwitchAudioSource -t input -m "$1" >/dev/null 2>&1
 }
 
+# Paint the lamp for a mute state. Measured at 74ms end to end, which is under
+# the threshold where a keypress feels laggy, so it runs inline rather than
+# being backgrounded -- a backgrounded one could land out of order behind a
+# second keypress and leave the colour lying about the state.
+#
+# Deliberately scoped to lighting only. The same CLI can reach the CrystalVoice
+# DSP, which is switched OFF in this device's firmware on purpose because it
+# made the mic sound like a phone; `--lighting-rgb` emits only the lighting
+# trio -- verified with `--dry-run --debug`, which showed those three frames
+# three times and nothing else -- so none of that is disturbed here.
+# The sidetone, switched with mute. Asserted rather than toggled blindly: it is
+# volatile, so after a re-enumeration it is off whatever we last asked for, and
+# the desk machine deliberately turns it off when it has the card.
+# The pinned device, skipping the is-it-attached check resolve_mic does. That
+# check is a SwitchAudioSource call and costs 62ms measured, which is a third of
+# the budget on a path that runs on a keypress. If the card is absent the helper
+# just fails, which is the same outcome as resolving to something else would be.
+mic_device_fast() {
+    if [[ -n "$MIC_DEVICE" ]]; then printf '%s' "$MIC_DEVICE"; return; fi
+    resolve_mic
+}
+
+ensure_default_input() {
+    (( MIC_CLAIM_DEFAULT_INPUT )) || return 0
+    device_exists "$SINK_DEVICE" input || return 0
+    local cur
+    cur="$(SwitchAudioSource -t input -c 2>/dev/null)"
+    [[ "$cur" == "$SINK_DEVICE" ]] && return 0
+    log chain "default input was '$cur', claiming '$SINK_DEVICE' so apps get the gate"
+    SwitchAudioSource -t input -s "$SINK_DEVICE" >/dev/null 2>&1 || true
+}
+
+sidetone_apply() {
+    local want="$1"
+    [[ -n "$MIC_SIDETONE" ]] || return 0
+    [[ -x "$COREAUDIO_CTL" ]] || return 0
+    local mic; mic="$(mic_device_fast)"
+    case "$want" in
+        on)  "$COREAUDIO_CTL" playthru set "$mic" 1 "$MIC_SIDETONE_DB" >/dev/null 2>&1 || true ;;
+        off) "$COREAUDIO_CTL" playthru set "$mic" 0 >/dev/null 2>&1 || true ;;
+    esac
+}
+
+sidetone_state() {
+    [[ -x "$COREAUDIO_CTL" ]] || { printf 'unknown'; return; }
+    local mic v; mic="$(mic_device_fast)"
+    v="$("$COREAUDIO_CTL" playthru get "$mic" 2>/dev/null | head -1)"
+    case "$v" in
+        1) printf 'on' ;;
+        0) printf 'off' ;;
+        *) printf 'not supported' ;;
+    esac
+}
+
+rgb_apply() {
+    local want
+    case "$1" in
+        muted) want="$MIC_RGB_MUTED" ;;
+        live)  want="$MIC_RGB_LIVE" ;;
+        *)     return 0 ;;
+    esac
+    [[ -n "$want" ]] || return 0
+    [[ -x "$G6_CLI" ]] || return 0
+    # shellcheck disable=SC2086 -- $want is three separate arguments.
+    "$G6_CLI" --lighting-rgb $want >/dev/null 2>&1 || true
+}
+
 mute_toggle() {
     mkdir -p "$STATE_DIR"
     # SwitchAudioSource's own toggle, so the device state always flips, even if
@@ -459,9 +557,13 @@ mute_toggle() {
     fi
     if [[ -e "$MUTE_STATE_FILE" ]]; then
         rm -f "$MUTE_STATE_FILE"
+        sidetone_apply on
+        rgb_apply live
         echo "unmuted"
     else
         : > "$MUTE_STATE_FILE"
+        sidetone_apply off
+        rgb_apply muted
         echo "muted"
     fi
 }
@@ -472,11 +574,15 @@ mute_set() {
         on)
             hw_mute mute || { echo "could not reach the default input device" >&2; return 1; }
             : > "$MUTE_STATE_FILE"
+            sidetone_apply off
+            rgb_apply muted
             echo "muted"
             ;;
         off)
             hw_mute unmute || { echo "could not reach the default input device" >&2; return 1; }
             rm -f "$MUTE_STATE_FILE"
+            sidetone_apply on
+            rgb_apply live
             echo "unmuted"
             ;;
     esac
@@ -593,8 +699,8 @@ levels() {
 # system_profiler rather than CoreAudio directly, so this stays dependency-free.
 # It costs about a second, so only `status` pays for it.
 input_source_of() {
-    if [[ -x "$INPUT_SOURCE_HELPER" ]]; then
-        "$INPUT_SOURCE_HELPER" get "$1" 2>/dev/null
+    if [[ -x "$COREAUDIO_CTL" ]]; then
+        "$COREAUDIO_CTL" input-source get "$1" 2>/dev/null
         return
     fi
     system_profiler SPAudioDataType 2>/dev/null | awk -v want="$1:" '
@@ -624,14 +730,21 @@ input_source_of() {
 ensure_input_source() {
     local dev="$1" now
     [[ -n "$MIC_INPUT_SOURCE" ]] || return 0
-    [[ -x "$INPUT_SOURCE_HELPER" ]] || return 0
-    now="$("$INPUT_SOURCE_HELPER" get "$dev" 2>/dev/null)"
+    [[ -x "$COREAUDIO_CTL" ]] || return 0
+    # Only for the pinned device. The setting names a source that device has; the
+    # fallback mic has its own, and asking the built-in microphone for
+    # 'External Mic' fails once every poll and fills the log -- which it did,
+    # while the card was away on the desk machine:
+    #   input source on 'MacBook Pro Microphone' was 'MacBook Pro Microphone',
+    #   setting 'External Mic' / could not set input source to 'External Mic'
+    [[ -z "$MIC_DEVICE" || "$dev" == "$MIC_DEVICE" ]] || return 0
+    now="$("$COREAUDIO_CTL" input-source get "$dev" 2>/dev/null)"
     # Empty means the device models no data source at all, so there is nothing
     # to manage and nothing to warn about.
     [[ -n "$now" ]] || return 0
     [[ "$now" == *"$MIC_INPUT_SOURCE"* ]] && return 0
     log chain "input source on '$dev' was '$now', setting '$MIC_INPUT_SOURCE'"
-    "$INPUT_SOURCE_HELPER" set "$dev" "$MIC_INPUT_SOURCE" >/dev/null 2>&1 \
+    "$COREAUDIO_CTL" input-source set "$dev" "$MIC_INPUT_SOURCE" >/dev/null 2>&1 \
         || log chain "could not set input source to '$MIC_INPUT_SOURCE'"
 }
 
@@ -654,10 +767,8 @@ input_source_is_mic() {
 }
 
 status() {
-    local mic out veto
+    local mic
     mic=$(resolve_mic)
-    out=$(resolve_monitor_out)
-    veto=$(monitor_veto "$out")
 
     echo "Mute"
     printf '  state          %s (last set here; CoreAudio mute is write-only)\n' "$(mute_status)"
@@ -672,12 +783,12 @@ status() {
         printf '  input source   %s%s%s\n' "$src" \
             "$(input_source_is_mic "$src" && echo "" || echo "  [NOT A MIC -- records silence]")" \
             "$( [[ -n "$MIC_INPUT_SOURCE" ]] && echo "  (pinned to '$MIC_INPUT_SOURCE')" )"
-        if [[ -n "$MIC_INPUT_SOURCE" && ! -x "$INPUT_SOURCE_HELPER" ]]; then
+        if [[ -n "$MIC_INPUT_SOURCE" && ! -x "$COREAUDIO_CTL" ]]; then
             printf '                 pinned, but %s is missing -- run ./install.sh audio\n' \
-                "$INPUT_SOURCE_HELPER"
+                "$COREAUDIO_CTL"
         fi
-        if [[ -x "$INPUT_SOURCE_HELPER" ]] && ! input_source_is_mic "$src"; then
-            "$INPUT_SOURCE_HELPER" list "$mic" 2>/dev/null | sed 's/^/                 /'
+        if [[ -x "$COREAUDIO_CTL" ]] && ! input_source_is_mic "$src"; then
+            "$COREAUDIO_CTL" input-source list "$mic" 2>/dev/null | sed 's/^/                 /'
         fi
     fi
     printf '  sink           %s%s\n' "$SINK_DEVICE" \
@@ -689,12 +800,17 @@ status() {
     printf '  gain           %s dB (after the gate)\n' "$MIC_GAIN"
     printf '  agent          %s\n' "$(agent_state com.dotfiles.mic-chain)"
     echo
-    echo "Monitor"
-    printf '  dock           %s%s\n' "$(dock_state)" \
-        "$( (( MONITOR_REQUIRE_DOCK )) && echo "  (required)" || echo "  (not required)" )"
-    printf '  output         %s\n' "${out:-(none)}"
-    printf '  usable         %s\n' "${veto:-yes}"
-    printf '  agent          %s\n' "$(agent_state com.dotfiles.mic-monitor)"
+    echo "Sidetone"
+    printf '  device         %s\n' "$(sidetone_state)"
+    printf '  wanted         %s\n' \
+        "$( [[ -n "$MIC_SIDETONE" ]] && echo "$MIC_SIDETONE at ${MIC_SIDETONE_DB} dB, following mute" || echo "(unmanaged)" )"
+    printf '  output         %s\n' "$(SwitchAudioSource -t output -c 2>/dev/null)"
+    printf '  lamp           %s\n' \
+        "$( [[ -n "$MIC_RGB_LIVE$MIC_RGB_MUTED" ]] && echo "live '$MIC_RGB_LIVE', muted '$MIC_RGB_MUTED'" || echo "(unmanaged)" )"
+    echo
+    echo "The sidetone is the device's own analog tap, so it carries no gate --"
+    echo "Meet and Slack gate on their side. It is also why mute has to switch it"
+    echo "explicitly: muting the host cannot reach a signal that never leaves the card."
     echo
     if [[ -n "$src" ]] && ! input_source_is_mic "$src"; then
         echo "NOTE: '$mic' is set to '$src', which carries no microphone, so the"
@@ -714,14 +830,15 @@ status() {
 
 usage() {
     cat <<USAGE
-micctl -- microphone chain, monitoring and mute
+micctl -- microphone chain, sidetone and mute
 
   micctl mute [toggle|on|off|status]   default: toggle  (bound to Option+B)
+                                       also switches the sidetone and the lamp
+  micctl sidetone [on|off|status]      the device's analog monitoring
   micctl status                        devices, gate settings, agent health
   micctl levels [seconds]              measure the noise floor, suggest a threshold
-  micctl start|stop|restart [chain|monitor|all]
+  micctl start|stop|restart [chain]
   micctl chain                         run the chain in the foreground (launchd)
-  micctl monitor                       run monitoring in the foreground (launchd)
 
 Settings live in ~/.config/audio/local.conf; see audio/README.md.
 USAGE
@@ -729,10 +846,8 @@ USAGE
 
 agents_for() {
     case "${1:-all}" in
-        chain)   echo com.dotfiles.mic-chain ;;
-        monitor) echo com.dotfiles.mic-monitor ;;
-        all|"")  echo com.dotfiles.mic-chain com.dotfiles.mic-monitor ;;
-        *)       echo "unknown target: $1" >&2; return 1 ;;
+        chain|all|"") echo com.dotfiles.mic-chain ;;
+        *)            echo "unknown target: $1" >&2; return 1 ;;
     esac
 }
 
@@ -745,8 +860,14 @@ case "${1:-status}" in
             *) usage; exit 1 ;;
         esac
         ;;
-    chain)   supervise chain resolve_mic : chain_sox ensure_input_source ;;
-    monitor) supervise monitor resolve_monitor_out monitor_veto monitor_sox : ;;
+    sidetone)
+        case "${2:-status}" in
+            on|off) sidetone_apply "$2"; echo "sidetone $(sidetone_state)" ;;
+            status) echo "$(sidetone_state)" ;;
+            *) usage; exit 1 ;;
+        esac
+        ;;
+    chain)   supervise chain resolve_mic : chain_sox chain_keep ;;
     start|stop|restart)
         targets=$(agents_for "${2:-all}") || exit 1
         for a in $targets; do

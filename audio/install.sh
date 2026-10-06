@@ -2,9 +2,9 @@
 # audio module: a gated microphone with sidetone, the macOS equivalent of the
 # EasyEffects and VoiceMeeter setups on the other machines.
 #
-#   - sox and switchaudio-osx from Homebrew, plus the BlackHole 2ch driver
+#   - sox, switchaudio-osx and hidapi from Homebrew, plus the BlackHole 2ch driver
 #   - micctl into ~/.local/bin
-#   - two launchd agents: the processing chain, and monitoring
+#   - one launchd agent: the processing chain
 #
 # The Option+B mute hotkey is a Karabiner rule and so lives in that module
 # (karabiner/rules/microphone.json), the same way rules/omniwm.json drives the
@@ -12,7 +12,7 @@
 #
 # Flags:
 #   --no-packages   skip brew (micctl and the agents are still installed)
-#   --no-agents     install micctl only, no launchd jobs
+#   --no-agents     install micctl only, no launchd job
 #   --no-monitor    install the chain agent but not the sidetone one
 #   --no-default-input  leave the system default input device alone
 
@@ -35,6 +35,10 @@ if (( SKIP_PACKAGES )); then
 elif check_pkg_manager_installed brew; then
     log "Installing sox and switchaudio-osx..."
     brew install sox switchaudio-osx
+    # hidapi and libusb are for the G6 CLI below, which drives the mute lamp;
+    # python@3.13 because the CLI needs 3.12+ and macOS still ships 3.9.
+    log "Installing the G6 CLI's dependencies..."
+    brew install hidapi libusb python@3.13
 
     # The driver is a kernel-adjacent install: it needs an admin password and
     # does not exist until the machine has been restarted. Everything else here
@@ -62,17 +66,46 @@ link audio/bin/micctl "$HOME/.local/bin/micctl"
 # helper that can. Optional: without it micctl still reports the wrong input in
 # `status`, it just cannot correct it.
 if command -v clang >/dev/null 2>&1; then
-    log "Building the input-source helper..."
+    log "Building the CoreAudio helper..."
     mkdir -p "$HOME/.local/libexec"
     if clang -O2 -Wall -framework CoreAudio -framework CoreFoundation \
-        -o "$HOME/.local/libexec/micctl-input-source" "$MODULE_DIR/src/input-source.c"; then
-        log "  -> ~/.local/libexec/micctl-input-source"
+        -o "$HOME/.local/libexec/micctl-coreaudio" "$MODULE_DIR/src/coreaudio-ctl.c"; then
+        log "  -> ~/.local/libexec/micctl-coreaudio"
     else
-        warn "input-source helper did not build; micctl will report the input source but not correct it."
+        warn "CoreAudio helper did not build; micctl can report the input source and"
+        warn "sidetone but not correct them."
     fi
 else
-    warn "clang not found (install the Xcode command line tools), so the input-source"
-    warn "helper was not built. micctl will report the input source but not correct it."
+    warn "clang not found (install the Xcode command line tools), so the CoreAudio"
+    warn "helper was not built. micctl can report the input source and sidetone but"
+    warn "not correct them."
+fi
+
+# The lamp is a vendor HID setting, so it needs the third-party G6 CLI; nothing in
+# macOS reaches it. Optional: without it micctl just leaves the lighting alone.
+# Pinned to its own venv rather than the system python, which is 3.9 here while the
+# CLI needs 3.12+.
+G6_VENV="$HOME/.local/share/g6-cli-venv"
+if [[ " $* " == *" --no-packages "* ]]; then
+    :
+elif [[ -x "$G6_VENV/bin/soundblaster-x-g6-cli" ]]; then
+    log "G6 CLI already installed."
+else
+    g6_python=""
+    for c in /opt/homebrew/bin/python3.13 /opt/homebrew/bin/python3.12 python3.13 python3.12; do
+        command -v "$c" >/dev/null 2>&1 && { g6_python="$c"; break; }
+    done
+    if [[ -z "$g6_python" ]]; then
+        warn "No python 3.12+ found, so the G6 CLI was not installed and the mute lamp"
+        warn "will not work. brew install python@3.13, then re-run."
+    else
+        log "Installing the G6 CLI (for the mute lamp)..."
+        "$g6_python" -m venv "$G6_VENV" \
+            && "$G6_VENV/bin/pip" install --quiet --upgrade pip \
+            && "$G6_VENV/bin/pip" install --quiet soundblaster-x-g6-cli \
+            && log "  -> $G6_VENV/bin/soundblaster-x-g6-cli" \
+            || warn "G6 CLI install failed; the mute lamp will not work."
+    fi
 fi
 
 mkdir -p "$HOME/.config/audio" "$HOME/.local/state/audio"
@@ -101,17 +134,15 @@ if [[ ! -e "$conf" ]]; then
 # `micctl status` lists what the device offers.
 # MIC_INPUT_SOURCE="External Mic"
 
-# Pin the monitoring output instead of following the system default output:
-# MONITOR_DEVICE="External Headphones"
-# MONITOR_GAIN=0
+# The device's own analog mic monitoring -- the sidetone. Volatile, and the desk
+# machine turns it off when it takes the card, so micctl asserts it; the mute key
+# switches it, because muting the host cannot reach an analog tap inside the card.
+# MIC_SIDETONE="on"
+# MIC_SIDETONE_DB=6
 
-# Monitoring refuses to run on the built-in speakers, because that is an
-# acoustic feedback loop. Set to 1 only if you know the mic cannot hear them.
-# MONITOR_ALLOW_SPEAKERS=0
-
-# Monitoring only runs while docked, because undocked there is no headset to
-# hear it in. Set to 0 to monitor anywhere the output allows it.
-# MONITOR_REQUIRE_DOCK=1
+# The mic's lamp as a mute indicator, "R G B" each 0-255. Needs the G6 CLI.
+# MIC_RGB_LIVE="255 255 255"
+# MIC_RGB_MUTED="255 0 0"
 
 # Gate threshold in dBFS peak. `micctl levels` measures the room and suggests
 # one. Higher cuts more noise but risks clipping quiet speech.
@@ -156,11 +187,16 @@ if [[ " $* " == *" --no-agents "* ]]; then
     log "Skipping launchd agents (--no-agents)."
 else
     agents=(mic-chain)
-    if [[ " $* " == *" --no-monitor "* ]]; then
-        log "Skipping the monitoring agent (--no-monitor)."
-    else
-        agents+=(mic-monitor)
+
+    # Monitoring used to be a second agent relaying the sink to the headphones.
+    # The sidetone is the device's own analog tap now, so that agent is gone --
+    # and running both at once comb-filters the voice into something thin and
+    # echoey, which is worth actively preventing rather than just not installing.
+    if launchctl print "gui/$UID/com.dotfiles.mic-monitor" >/dev/null 2>&1; then
+        log "Removing the old monitoring agent..."
+        launchctl bootout "gui/$UID/com.dotfiles.mic-monitor" 2>/dev/null || true
     fi
+    rm -f "$HOME/Library/LaunchAgents/com.dotfiles.mic-monitor.plist"
 
     mkdir -p "$HOME/Library/LaunchAgents"
     for name in "${agents[@]}"; do

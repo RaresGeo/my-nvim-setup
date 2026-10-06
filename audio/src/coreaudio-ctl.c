@@ -1,4 +1,15 @@
-// input-source -- read and set a CoreAudio device's INPUT data source.
+// coreaudio-ctl -- read and set CoreAudio device properties that macOS exposes
+// in System Settings but ships no command line for.
+//
+// Two of them, both needed by micctl and both VOLATILE -- they are USB-audio-class
+// controls, so the device resets them to its defaults on every re-enumeration.
+// Handing the card to another machine over a USB switch and taking it back is a
+// re-enumeration.
+//
+//   input-source   which physical input the device listens on
+//   playthru       the device's own analog monitoring of that input back to its
+//                  output: zero latency, because the signal never reaches the
+//                  host. This is the sidetone.
 //
 // macOS shows this as "Input Source" under System Settings > Sound > Input, for
 // devices that have more than one physical input behind one USB interface. The
@@ -16,9 +27,11 @@
 // Built by ../install.sh. No third-party dependencies -- just clang and the two
 // system frameworks.
 //
-//   input-source get  <device>
-//   input-source list <device>            '*' marks the current one
-//   input-source set  <device> <substring>
+//   coreaudio-ctl input-source get  <device>
+//   coreaudio-ctl input-source list <device>            '*' marks the current one
+//   coreaudio-ctl input-source set  <device> <substring>
+//   coreaudio-ctl playthru     get  <device>
+//   coreaudio-ctl playthru     set  <device> <0|1> [dB]
 #include <CoreAudio/CoreAudio.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -28,6 +41,8 @@ static const AudioObjectPropertyAddress kSources = {
     kAudioDevicePropertyDataSources, kAudioObjectPropertyScopeInput, kAudioObjectPropertyElementMain };
 static const AudioObjectPropertyAddress kCurrent = {
     kAudioDevicePropertyDataSource, kAudioObjectPropertyScopeInput, kAudioObjectPropertyElementMain };
+static const AudioObjectPropertyAddress kThru = {
+    kAudioDevicePropertyPlayThru, kAudioDevicePropertyScopePlayThrough, kAudioObjectPropertyElementMain };
 
 // The name of one source id. It is an AudioValueTranslation, not a plain get:
 // the id goes in and a CFString comes back.
@@ -70,11 +85,84 @@ static AudioObjectID find_device(const char *want) {
     return found;
 }
 
+// The monitoring level, in dB, on each channel element. Element 0 carries the
+// on/off switch and no volume, so the channels are walked from 1.
+static void thru_db_print(AudioObjectID dev) {
+    for (UInt32 el = 1; el <= 2; el++) {
+        AudioObjectPropertyAddress a = {
+            kAudioDevicePropertyPlayThruVolumeDecibels, kAudioDevicePropertyScopePlayThrough, el };
+        Float32 db = 0; UInt32 sz = sizeof db;
+        if (AudioObjectGetPropertyData(dev, &a, 0, NULL, &sz, &db) == noErr)
+            printf("  ch%u %.2f dB\n", el, db);
+    }
+}
+
+static int thru_db_set(AudioObjectID dev, Float32 db) {
+    int bad = 0;
+    for (UInt32 el = 1; el <= 2; el++) {
+        AudioObjectPropertyAddress a = {
+            kAudioDevicePropertyPlayThruVolumeDecibels, kAudioDevicePropertyScopePlayThrough, el };
+        if (AudioObjectSetPropertyData(dev, &a, 0, NULL, sizeof db, &db) != noErr) bad = 1;
+    }
+    return bad;
+}
+
+static int playthru(AudioObjectID dev, int argc, char **argv) {
+    if (!AudioObjectHasProperty(dev, &kThru)) {
+        fprintf(stderr, "device has no playthrough\n");
+        return 1;
+    }
+    if (!strcmp(argv[1], "get")) {
+        UInt32 v = 0, sz = sizeof v;
+        if (AudioObjectGetPropertyData(dev, &kThru, 0, NULL, &sz, &v) != noErr) return 1;
+        printf("%u\n", v);
+        thru_db_print(dev);
+        return 0;
+    }
+    if (!strcmp(argv[1], "set")) {
+        if (argc < 4) { fprintf(stderr, "playthru set needs 0 or 1\n"); return 2; }
+        UInt32 v = (UInt32)atoi(argv[3]);
+        OSStatus st = AudioObjectSetPropertyData(dev, &kThru, 0, NULL, sizeof v, &v);
+        if (st != noErr) { fprintf(stderr, "could not set playthru: OSStatus %d\n", (int)st); return 1; }
+        if (argc > 4 && thru_db_set(dev, (Float32)atof(argv[4])))
+            fprintf(stderr, "playthru set, but the level was refused\n");
+        // Read back rather than trusting the write. CoreAudio returns noErr for a
+        // set the driver then undoes, which is exactly how the input source
+        // behaves, so saying "done" on the strength of the status would lie.
+        UInt32 rb = 0, sz = sizeof rb;
+        if (AudioObjectGetPropertyData(dev, &kThru, 0, NULL, &sz, &rb) == noErr && rb != v) {
+            fprintf(stderr, "playthru read back as %u, not %u\n", rb, v);
+            return 1;
+        }
+        printf("%u\n", v);
+        return 0;
+    }
+    fprintf(stderr, "unknown playthru command: %s\n", argv[1]);
+    return 2;
+}
+
 int main(int argc, char **argv) {
-    if (argc < 3) { fprintf(stderr, "usage: input-source get|list|set <device> [source]\n"); return 2; }
-    const char *cmd = argv[1], *devname = argv[2];
+    if (argc < 4) {
+        fprintf(stderr, "usage: coreaudio-ctl input-source get|list|set <device> [source]\n");
+        fprintf(stderr, "       coreaudio-ctl playthru get|set <device> [0|1] [dB]\n");
+        return 2;
+    }
+    // coreaudio-ctl <group> <verb> <device> [...]
+    const char *group = argv[1];
+    const char *cmd = argv[2], *devname = argv[3];
     AudioObjectID dev = find_device(devname);
     if (dev == kAudioObjectUnknown) { fprintf(stderr, "no such device: %s\n", devname); return 1; }
+
+    if (!strcmp(group, "playthru")) {
+        // Shift so playthru() sees its own verb at argv[1] and args from argv[3].
+        char *sub[6] = { argv[0], argv[2], argv[3], argc > 4 ? argv[4] : NULL,
+                         argc > 5 ? argv[5] : NULL, NULL };
+        return playthru(dev, argc - 1, sub);
+    }
+    if (strcmp(group, "input-source")) {
+        fprintf(stderr, "unknown group: %s\n", group);
+        return 2;
+    }
 
     UInt32 cur = 0, csz = sizeof cur;
     int have_cur = AudioObjectGetPropertyData(dev, &kCurrent, 0, NULL, &csz, &cur) == noErr;
@@ -108,11 +196,11 @@ int main(int argc, char **argv) {
     }
 
     if (!strcmp(cmd, "set")) {
-        if (argc < 4) { fprintf(stderr, "set needs a source name\n"); free(srcs); return 2; }
+        if (argc < 5) { fprintf(stderr, "set needs a source name\n"); free(srcs); return 2; }
         for (UInt32 i = 0; i < n; i++) {
             char nm[256] = {0};
             name_of(dev, srcs[i], nm, sizeof nm);
-            if (nm[0] && strcasestr(nm, argv[3])) {
+            if (nm[0] && strcasestr(nm, argv[4])) {
                 OSStatus st = AudioObjectSetPropertyData(dev, &kCurrent, 0, NULL, sizeof(UInt32), &srcs[i]);
                 free(srcs);
                 if (st != noErr) { fprintf(stderr, "could not set input source: OSStatus %d\n", (int)st); return 1; }
@@ -120,7 +208,7 @@ int main(int argc, char **argv) {
                 return 0;
             }
         }
-        fprintf(stderr, "no input source matching '%s'\n", argv[3]);
+        fprintf(stderr, "no input source matching '%s'\n", argv[4]);
         free(srcs);
         return 1;
     }

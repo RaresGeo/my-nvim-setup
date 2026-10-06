@@ -26,7 +26,7 @@ brew install bash                       # the installers need bash 4+; macOS shi
 | `dock/dockctl` | `~/.local/bin/dockctl`, the docked/undocked switch (see below) |
 | `dock/com.dotfiles.dock-watch.plist.tpl` | Rendered to `~/Library/LaunchAgents/com.dotfiles.dock-watch.plist`, which runs `dockctl watch` — one resident process polling every 5s (the loop is in the script, not a `StartInterval`, so launchd has no respawns to throttle) |
 | `theme/kanagawa/` | `~/.local/state/omarchy/current/theme`, the path nvim, zsh and Alacritty read colors from |
-| `defaults.sh` | Fast key repeat, no press-and-hold popup, screenshots in `~/Pictures/Screenshots`, quittable Finder |
+| `defaults.sh` | Fast key repeat, no press-and-hold popup, screenshots in `~/Pictures/Screenshots`, quittable Finder, Cmd+Space freed from Spotlight for Raycast |
 | `build-alacritty.sh` | Builds the latest Alacritty release into `~/Applications` (Homebrew no longer ships it) |
 | `doctor.sh` | Prints what to look at when something misbehaves |
 
@@ -64,11 +64,23 @@ quiet in the log unless it actually moves something. `dockctl status` prints the
 display signature.
 
 `dockctl detect` prints just `docked` or `undocked`, which is the contract other
-modules read rather than parsing `status`. The [`audio`](../audio/README.md)
-module gates mic monitoring on it: sidetone is only wanted at the desk, where
-there is a headset to hear it in. Note that a manual `dockctl dock` is not a
-lever on that, because the watcher re-applies the hardware state within five
-seconds; `MONITOR_REQUIRE_DOCK=0` is.
+scripts read rather than parsing `status`.
+
+Docking also takes the desk microphone back. The Sound BlasterX G6 rides the same
+USB switch as the keyboard, so the keyboard arriving means the card arrived too —
+and the desk machine wants the opposite settings from this one, because it
+monitors in software and therefore switches the card's analog sidetone off while
+it holds it. Those are USB-audio-class controls, so they are volatile and reset on
+every re-enumeration; crossing the switch is one. Nothing can be assumed, so on
+the transition into docked `dockctl` asserts a known state through `micctl`:
+**unmuted, lamp white, sidetone on**.
+
+Starting from unmuted matters because the mute flag is write-only — a mute left
+over from before the handover would be invisible until you noticed nobody could
+hear you. Set `MIC_APPLY=0` to leave the microphone alone.
+
+Only on the transition, not every poll: asserting it on a five-second timer would
+fight the mute key and unmute you a moment after you pressed it.
 
 The flip side: moving a workspace to another display by hand gets undone within
 five seconds. That is what owning placement means — set `DOCK_MOVE_WORKSPACES=0`

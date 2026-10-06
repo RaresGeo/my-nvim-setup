@@ -20,20 +20,17 @@ built-in mic  ──────│  remix ─ → highpass 80Hz → noise gate 
                               Teams, browser, anything  ◀───────│  BlackHole 2ch  │
                               (their input device)              └─────────────────┘
                                                                         │
-                    ┌────────────── micctl monitor ──────────────┐      │
-      headphones ◀──│  whatever the far end hears, back to you  │◀─────┘
-                    └───────────────────────────────────────────┘
 ```
 
-Monitoring reads the *sink*, not the mic, so the sidetone is the processed
-signal. If the gate is clipping the start of your words you hear it happen
-rather than finding out from whoever you are talking to.
+Hearing yourself does not come through any of that: it is the card's own analog
+tap, inside the device and ahead of the ADC, so it has no latency and no gate.
+See [The sidetone](#the-sidetone).
 
 | File | Does |
 |------|------|
-| `bin/micctl` | The whole thing: `mute`, `status`, `levels`, `start`/`stop`/`restart`, and the two resident jobs `chain` and `monitor`. |
+| `bin/micctl` | The whole thing: `mute`, `sidetone`, `status`, `levels`, `start`/`stop`/`restart`, and the resident `chain` job. |
 | `com.dotfiles.mic-chain.plist.tpl` | launchd agent for the processing chain. Rendered by `install.sh`, which bakes in the absolute paths launchd needs. |
-| `com.dotfiles.mic-monitor.plist.tpl` | launchd agent for the sidetone. |
+| `src/coreaudio-ctl.c` | Reads and sets the input source and the sidetone. macOS shows both in System Settings but ships no CLI for either. Built by `install.sh`. |
 | `~/.config/audio/local.conf` | Device names and gate settings for this machine. Seeded by `install.sh`, not tracked: it is the only per-host part. |
 
 The **Option+B** mute key is a Karabiner rule, so it lives in that module
@@ -79,10 +76,37 @@ with whether they are actually alive.
 
 ## Mute
 
-**Option+B** toggles CoreAudio's own per-device mute flag, through
-`SwitchAudioSource -t input -m toggle`. It acts on whatever the system calls the
-default input, which here is the sink, so muting it silences exactly what every
-app reads.
+**Option+B** does three things, in this order:
+
+| | |
+|---|---|
+| 1. mute flag | CoreAudio's own per-device flag, via `SwitchAudioSource -t input -m toggle`, on the default input — which here is the sink, so it silences exactly what every app reads. |
+| 2. sidetone | switched off when muting, on when unmuting. Necessary, not cosmetic: the sidetone is an analog tap inside the card, so muting the host cannot reach it and you would otherwise still hear yourself while muted. |
+| 3. lamp | the G6's logo goes red when muted, white when live. |
+
+The order matters. Muting switches the sidetone off *before* repainting the lamp,
+so you stop hearing yourself immediately; unmuting switches it on *after*, so the
+lamp is never white while you are still inaudible.
+
+Measured at **157–164 ms** end to end, including the HID write for the lamp. It
+all runs inline rather than backgrounded: a backgrounded lamp write could land
+behind a second keypress and leave the colour contradicting the state.
+
+The lamp is why `micctl` needs the third-party G6 CLI; the lighting is a vendor
+HID setting and nothing in macOS reaches it. It is deliberately scoped to
+`--lighting-rgb`, since the same CLI can reach the CrystalVoice DSP that is
+switched **off** in this device's firmware on purpose. Verified with
+`--dry-run --debug`: that flag emits the three lighting frames, three times, and
+nothing else.
+
+Both are opt-in, because they are specific to a device that has them:
+
+```bash
+MIC_SIDETONE="on"                  # local.conf
+MIC_SIDETONE_DB=6
+MIC_RGB_LIVE="255 255 255"
+MIC_RGB_MUTED="255 0 0"
+```
 
 A real mute flag beats setting the volume to zero: there is no level to remember
 on the way back, and it does not fight with whatever you have the input gain set
@@ -100,7 +124,8 @@ Two honest limitations:
   `SwitchAudioSource`'s `-m` ignores `-s` and only ever acts on the current
   default input.
 
-There is deliberately no sound or notification on toggle.
+There is deliberately no sound or notification on toggle — the lamp is the
+indicator, and it is visible without taking focus or making noise.
 
 ### What Option+B costs
 
@@ -190,106 +215,71 @@ The desk mic (Sound BlasterX G6) measures window peaks with a median of −55.4
 and a p90 of −49.6 dBFS. Unity at −40 therefore puts the room floor around 20 dB
 down while leaving speech untouched.
 
-## Monitoring
+## The sidetone
 
-Sidetone is for the desk, so there are two independent guards and both have to
-pass. `micctl monitor` stays resident and waits rather than exiting when either
-one fails, which is what makes undocking, or unplugging headphones, a non-event
-instead of a dead agent.
-
-| Guard | Default | Why |
-|-------|---------|-----|
-| **Docked only** | `MONITOR_REQUIRE_DOCK=1` | Undocked there is no headset, so sidetone could only come out of the built-in speakers. |
-| **Never the speakers** | `MONITOR_ALLOW_SPEAKERS=0` | The mic hearing its own output through them is a feedback loop with a noise gate holding the door open. |
-
-Docked state comes from `dockctl detect`, so there is one definition of "docked"
-for the whole setup rather than a second one here: the desk keyboard arriving on
-the USB bus. If `dockctl` cannot be reached it falls back to the state file the
-dock watcher maintains, and failing that assumes **undocked**, because failing
-safe here means silence rather than a howl.
-
-A manual `dockctl dock` is not the lever, because the dock watcher re-applies
-the hardware state within five seconds. `MONITOR_REQUIRE_DOCK=0` is.
-
-The supervising loop re-checks both guards every couple of seconds, so undocking
-stops the sidetone on its own and docking brings it back, with no hotkey and
-nothing to remember.
-
-### Pin the output if the desk has speakers
-
-The speaker guard matches on device name, which catches the built-in output but
-**not** a monitor's own speakers: this desk's `DELL S3422DWG` carries audio over
-DisplayPort and would pass the check, then feed the room back into the mic. If
-the headset is not always going to be the default output, pin it instead and the
-question never arises:
+Hearing yourself is the **card's own analog monitoring** — `playthru` in
+CoreAudio's terms, which macOS shows under System Settings > Sound. The signal is
+tapped inside the G6 ahead of the ADC and mixed straight back into the headphone
+output, so it never reaches the host at all.
 
 ```bash
-echo 'MONITOR_DEVICE="Your Headset"' >> ~/.config/audio/local.conf
-micctl restart monitor
+MIC_SIDETONE="on"       # local.conf
+MIC_SIDETONE_DB=6
 ```
 
-### Latency
+Two consequences, both load-bearing:
 
-This is the weak point of the whole approach, and it will not match PipeWire.
-EasyEffects processes inside the graph, so a gate costs a quantum; here the
-signal crosses two separate user-space sox processes and a virtual driver, and
-each hop pays its own buffer.
+**Zero latency.** Nothing buffers it, because nothing in software touches it.
 
-The budget, per hop at 48 kHz stereo 16-bit:
+**It carries no gate.** The tap is ahead of everything the host does, so what you
+hear is the raw mic, not what Meet or Slack receive. If the gate ever clamps your
+speech, the sidetone will not tell you. That is an accepted trade here rather than
+an oversight: Meet and Slack both gate on their own side, and the gate below is
+set loose enough to only take out static, so the far end hearing *less* than the
+sidetone is the unlikely direction. The deciding factor was that zero latency
+beat hearing the gate.
 
-| Term | Cost |
-|------|------|
-| `SOX_BUFFER=1024` on the chain | ~5.3 ms |
-| `SOX_BUFFER=1024` on the monitor | ~5.3 ms |
-| `GATE_DELAY=0` | 0 ms |
-| CoreAudio + USB on the device itself | not measurable from here |
+**So mute has to switch it explicitly.** Muting the host cannot reach a signal
+that never leaves the card — `micctl mute` therefore switches the sidetone and
+repaints the lamp as well as setting the mute flag. See [Mute](#mute).
 
-`SOX_BUFFER` was swept against overruns on this machine: clean at 1024 and
-above, data dropped at 512, so the default sits one step off the floor. Both
-pipelines together logged zero overruns over 25 s at 1024.
+### It resets, and the other machine wants the opposite
 
-Measuring the true round trip needs a physical loopback (play a click, record
-what the mic hears), so the figures above are arithmetic, not measured.
+`playthru` is a USB-audio-class control, which means volatile: the device resets
+it on every re-enumeration, and handing the card across the USB switch is a
+re-enumeration. On top of that the desk machine wants it **off** — it monitors
+through a PipeWire loopback so it can hear its EasyEffects gate, and running both
+at once comb-filters the voice into something thin and echoey.
 
-**If it is still too slow, stop paying for the monitor hop.** Two ways, both
-better than tuning buffers:
+So neither machine may assume anything about it, and both assert what they want
+when the card arrives:
 
-1. **Hardware monitoring on the interface.** Many USB audio interfaces mix the
-   mic into their own headphone output in hardware, at zero latency. If the G6
-   does, use that and turn this off with `MONITOR_REQUIRE_DOCK=0` plus
-   `micctl stop monitor` — nothing in software can beat it.
-2. **A Multi-Output Device.** In Audio MIDI Setup, create one containing
-   BlackHole 2ch *and* the headphones, then point the chain at it
-   (`SINK_DEVICE="Multi-Output Device"`) and stop the monitor agent. One sox
-   process feeds both the apps and your ears, which removes a hop outright
-   rather than shrinking it.
+| | asserts | where |
+|---|---|---|
+| This Mac | sidetone **on**, lamp white, mic unmuted | `dockctl` on the transition into docked |
+| Desk machine | sidetone **off**, lamp white | `g6-mic-guard` on the absent→present edge |
 
-For genuinely low-latency monitoring with effects, the purpose-built macOS tools
-(Rogue Amoeba's Loopback and SoundSource) do this properly and are not free.
-This module is the free approximation.
+`dockctl` only does it on the *transition*, not every poll — asserting it on a
+five-second timer would fight the mute key and unmute you a moment after you
+pressed it.
 
-## Why both loops are in micctl and not launchd
+### A software relay was tried first, and lost
 
-sox exits whenever CoreAudio reconfigures underneath it: headphones unplugged,
-driver reloaded, sample rate changed. `micctl chain` and `micctl monitor` stay
-resident and restart their own sox, so launchd only ever sees one long-lived
-process with nothing to throttle.
+Monitoring used to be a second sox pipeline reading the sink and writing to the
+headphones, which did carry the gate. It is in the history if the trade ever needs
+revisiting, along with why it was dropped:
 
-Handing the respawning to launchd instead would put the job in the penalty box
-the first time the headphones were unplugged twice in quick succession, where it
-answers `EX_CONFIG` and refuses to spawn until reloaded by hand. That is not
-hypothetical: it is the failure the dock watcher hit, written up in
-`macos/dock/com.dotfiles.dock-watch.plist.tpl`. `KeepAlive` here is the backstop
-for `micctl` itself dying, and `ThrottleInterval` stops that becoming a spin.
+* **It wedged.** sox stays alive when CoreAudio reconfigures under it, relays
+  nothing, and floods `unhandled buffer overrun. Data discarded.` at ~28KB/s.
+  Measured against the card's own `What U Hear` loopback: a tone reached the
+  output at −12 dBFS played directly, −12 dBFS through a fresh relay, and
+  **−90.31 dBFS** through one that had been up 23 minutes. It also ignored
+  SIGTERM and needed SIGKILL, so the supervisor's own restart could not clear it.
+* **Latency**, which is the thing the analog tap gets right for free.
+* The stall detector that came out of it is still in `supervise`, because the
+  chain can wedge the same way. A working pipeline logs zero overruns, so the
+  threshold is not delicate.
 
-Both jobs are `ProcessType = Interactive`, which opts out of App Nap and the CPU
-limiter. A gate starved of CPU drops the signal, which sounds exactly like a mic
-that has died.
-
-The loops also re-resolve the device every couple of seconds and restart sox
-when it changes, because sox only notices when the device it already holds goes
-away. Without that, plugging in a headset would leave the chain on the old mic
-until something else restarted it.
 
 ## The input source resets itself
 
@@ -363,7 +353,7 @@ tail -f ~/.local/state/audio/mic-chain.log      # the chain says why it is waiti
 |---------|-------|
 | Apps get silence | The chain is not running, or BlackHole is installed but the machine has not been restarted. `micctl status` says which. |
 | Chain log says "waiting: BlackHole 2ch is not installed" | Restart the machine, or the cask never installed. |
-| No sidetone | Expected when undocked, and it will not use the built-in speakers either. `micctl status` prints the reason under `Monitor / usable`, and the dock state above it. |
+| No sidetone | `micctl status` prints it under `Sidetone / device`. It is volatile and the desk machine turns it off, so after a USB switch it needs asserting: `micctl sidetone on`, or just re-dock. |
 | Mic indicator always on | Expected: the chain holds the mic open permanently. That is the cost of a gate that applies to outgoing audio. |
 | Log fills with sox's usage text and `missing filename` | sox format options (`-r`, `-c`) must come *before* the device they describe. Put them after and sox reads the device as the output, then finds options with no file left. The supervisor backs off on immediate failures so the real error stays readable. |
 | Sink is silent while the mic clearly works | Expected when nobody is talking: that is the gate holding shut. Measure with `micctl levels`, or speak while capturing. |
