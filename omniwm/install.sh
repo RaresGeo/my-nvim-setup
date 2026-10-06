@@ -32,6 +32,10 @@ fi
 log "Linking settings.toml..."
 link omniwm/settings.toml "$HOME/.config/omniwm/settings.toml"
 
+log "Linking the scratchpad pinner..."
+link omniwm/scratchpad-pin "$HOME/.local/bin/omniwm-scratchpad-pin"
+chmod +x "$HOME/.local/bin/omniwm-scratchpad-pin"
+
 log "Linking the empty-workspace watcher..."
 link omniwm/empty-workspace-focus "$HOME/.local/bin/omniwm-empty-workspace-focus"
 chmod +x "$HOME/.local/bin/omniwm-empty-workspace-focus"
@@ -62,6 +66,37 @@ PLIST
 
 launchctl unload "$LAUNCH_AGENT" 2>/dev/null || true
 launchctl load "$LAUNCH_AGENT"
+
+log "Installing the scratchpad pinner as a login item..."
+PIN_AGENT="$HOME/Library/LaunchAgents/com.danielsetup.omniwm-scratchpad-pin.plist"
+cat > "$PIN_AGENT" <<PLIST
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.danielsetup.omniwm-scratchpad-pin</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>$HOME/.local/bin/omniwm-scratchpad-pin</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardErrorPath</key>
+    <string>/tmp/omniwm-scratchpad-pin.log</string>
+</dict>
+</plist>
+PLIST
+
+launchctl unload "$PIN_AGENT" 2>/dev/null || true
+launchctl load "$PIN_AGENT"
+
+if [[ ! -d "$HOME/Applications/Chrome Apps.localized/Google Calendar.app" ]]; then
+    warn "The Google Calendar PWA is not installed; scratchpad 1 will stay empty."
+    info "Open https://calendar.google.com in Chrome, then: menu > Cast, Save and Share > Install page as app."
+fi
 
 if pgrep -xq OmniWM; then
     log "OmniWM already running; restart it to pick up settings.toml changes."

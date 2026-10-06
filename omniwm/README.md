@@ -31,7 +31,7 @@ untouched — same convention the AeroSpace module used.
 | option + shift + 1–9 | Move the window to a workspace and follow it |
 | option + tab / option + shift + tab | Next / previous workspace |
 | control + option + tab | Jump back to the last workspace |
-| option + s | Toggle scratchpad 1 |
+| option + s | Toggle scratchpad 1 — Google Calendar lives there, see below |
 | option + shift + s | Assign/unassign the focused window to scratchpad 1 |
 | option + w | Close window |
 | option + f | Fullscreen |
@@ -123,6 +123,71 @@ It names the exact key, e.g. `monitorBarOverrides[0].id: Key 'id' not found`.
 
 Nothing here is dock-state dependent, so `dockctl` stays out of it: both panels
 are configured correctly whether or not the Dell is attached.
+
+## The calendar scratchpad
+
+**Option+S** brings up Google Calendar. It is a Chrome PWA, not a browser
+window — installed from `calendar.google.com` via Chrome's *Cast, Save and
+Share > Install page as app*, which gives it its own bundle in
+`~/Applications/Chrome Apps.localized` and, importantly, its own bundle ID:
+
+```
+com.google.Chrome.app.kjbdgfilnfhdoflbpgamdcdgpehopbep
+```
+
+That ID is why this works at all. A `--app=` window launched from the Chrome
+binary would still be `com.google.Chrome` to both macOS and OmniWM, so nothing
+could single it out from an ordinary browser window. A real PWA install is a
+separate app as far as the WM is concerned.
+
+Chrome's install flow is UI-only — there is no flag for it — so `install.sh`
+cannot create it and only warns when it is missing.
+
+### Why this needs a daemon
+
+`scratchpad-pin` is a watcher, because nothing in OmniWM can express "this app
+belongs in a scratchpad". Checked against 0.7.2:
+
+- **`appRules` has no scratchpad action.** It can pin an app to a workspace
+  (`--assign-to-workspace`), set its layout and its initial span, and nothing
+  else — `omniwmctl query rule-actions` is the full list.
+- **The only scratchpad command acts on the focused window.**
+  `omniwmctl command scratchpad assign <slot>` takes no window argument, so
+  the watcher has to focus the window first and put focus back afterwards.
+- **Membership is never written to disk.** `settings.toml` round-trips
+  `[scratchpads]` and `[scratchpads.labels]`, but the members are not in the
+  schema and assigning does not rewrite the file at all. Nor does
+  `~/.local/state/omniwm/runtime-state.json`. So the assignment dies with the
+  window, and with every OmniWM restart.
+
+So the watcher subscribes to `windows-changed` and re-applies the assignment.
+It leans on two things worth knowing:
+
+- `subscribe` sends an initial event, so every reconnect sweeps immediately.
+  A reconnect *is* the OmniWM-restarted signal, and that is when the list of
+  already-pinned windows is forgotten and everything is pinned again.
+- Each window is pinned once per OmniWM session, so unassigning something by
+  hand with **Option+Shift+S** sticks instead of being fought back.
+
+A window assigned into a slot that is currently *revealed* stays on screen,
+which at login would leave the calendar floating over everything, so the
+watcher conceals the slot when a freshly pinned window comes up visible.
+
+Two traps, if you extend this:
+
+- **`query windows --scratchpad` is not trustworthy.** It returned an empty
+  list while scratchpad members were plainly present and visible. Read
+  `scratchpadIndex` off `query windows` instead, which is what the script does.
+- **`assign` acts on whatever is focused the moment it runs**, and focus
+  changes are asynchronous. The script polls until the window it asked for is
+  actually focused before firing, or it would pin a bystander.
+
+`[scratchpads.labels]` *is* persisted, so slot 1's bar pill is named:
+
+```toml
+[scratchpads.labels]
+1 = "Calendar"
+```
 
 ## Known limitations (not fixable from config)
 

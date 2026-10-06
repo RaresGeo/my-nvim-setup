@@ -1,0 +1,116 @@
+#!/bin/bash
+# Keeps configured apps sitting in an OmniWM scratchpad.
+#
+# OmniWM has no rule for this. `appRules` can pin an app to a workspace but
+# has no scratchpad action, and the only scratchpad command is "assign the
+# *focused* window" (`omniwmctl command scratchpad assign N`). Membership is
+# also memory-only: settings.toml round-trips [scratchpads.labels] but never
+# the members, and assigning does not rewrite the file at all (checked
+# against 0.7.2). So the assignment dies with the window and with every
+# OmniWM restart. This watcher re-applies it.
+#
+# Each window is pinned once per OmniWM session, so unassigning something by
+# hand (option + shift + s) sticks instead of being fought back.
+
+set -u
+
+# One "<bundle-id>:<scratchpad slot>" per line.
+PINS=(
+    "com.google.Chrome.app.kjbdgfilnfhdoflbpgamdcdgpehopbep:1"  # Google Calendar PWA
+)
+
+# Launched at login, where ~/.local/bin is not on PATH yet.
+PATH="$HOME/.local/bin:/opt/homebrew/bin:/Applications/OmniWM.app/Contents/MacOS:$PATH"
+
+# Windows already pinned this OmniWM session, as " id id id ".
+PINNED=" "
+
+focused_id() {
+    omniwmctl query focused-window --format json 2>/dev/null \
+        | jq -r '.result.payload.window.id // empty'
+}
+
+# "<id>\t<slot>" per window of a bundle id; slot is 0 when unassigned.
+# `query windows --scratchpad` is not usable here: it came back empty while
+# scratchpad members were plainly present, so read scratchpadIndex instead.
+windows_for() {
+    omniwmctl query windows --bundle-id "$1" --format json 2>/dev/null \
+        | jq -r '.result.payload.windows[]? | [.id, (.scratchpadIndex // 0)] | @tsv'
+}
+
+is_visible() {
+    omniwmctl query windows --window "$1" --format json 2>/dev/null \
+        | jq -r '.result.payload.windows[0].isVisible // false'
+}
+
+pin() {
+    local id=$1 slot=$2 prev i
+
+    prev=$(focused_id)
+    omniwmctl window focus "$id" >/dev/null 2>&1 || return 1
+
+    # `assign` acts on whatever is focused at the moment it runs, and focus
+    # changes are asynchronous, so never fire it until the window we asked
+    # for is the one actually focused - otherwise it pins a bystander.
+    for i in $(seq 10); do
+        [ "$(focused_id)" = "$id" ] && break
+        sleep 0.1
+    done
+    [ "$(focused_id)" = "$id" ] || return 1
+
+    omniwmctl command scratchpad assign "$slot" >/dev/null 2>&1 || return 1
+
+    # A slot remembers whether it is revealed, and a window assigned into a
+    # revealed slot stays on screen - which at login means the calendar
+    # floating over everything. `toggle` is only a toggle, so conceal it by
+    # firing that once, and only when it actually came up visible.
+    if [ "$(is_visible "$id")" = "true" ]; then
+        omniwmctl command scratchpad toggle "$slot" >/dev/null 2>&1
+    fi
+
+    # Concealing drops focus wherever macOS decides; put it back where the
+    # user had it.
+    if [ -n "$prev" ] && [ "$prev" != "$id" ]; then
+        omniwmctl window focus "$prev" >/dev/null 2>&1
+    fi
+}
+
+sweep() {
+    local spec bundle slot id slot_now
+    for spec in "${PINS[@]}"; do
+        bundle=${spec%:*}
+        slot=${spec##*:}
+        while IFS=$'\t' read -r id slot_now; do
+            [ -n "$id" ] || continue
+            [ "$slot_now" = "$slot" ] && continue
+            case "$PINNED" in *" $id "*) continue ;; esac
+            pin "$id" "$slot" && PINNED="$PINNED$id "
+        done < <(windows_for "$bundle")
+    done
+}
+
+# At login launchd can start this before OmniWM is up, so wait for the WM
+# rather than opening apps it would not yet be managing.
+until omniwmctl ping >/dev/null 2>&1; do sleep 2; done
+
+# Make sure the apps are running, or there is no window to pin. -g keeps them
+# out of the foreground; they get concealed into the scratchpad a moment later.
+for spec in "${PINS[@]}"; do
+    bundle=${spec%:*}
+    open -g -b "$bundle" 2>/dev/null || true
+done
+
+while true; do
+    # Reading through process substitution rather than a pipe keeps PINNED in
+    # this shell, where it survives between events.
+    #
+    # subscribe sends an initial event, so every (re)connect sweeps right
+    # away - and a reconnect means OmniWM restarted and dropped every
+    # assignment, so forget what we pinned and do it again.
+    PINNED=" "
+    while IFS= read -r line; do
+        [ "$(jq -r '.kind' <<<"$line" 2>/dev/null)" = "event" ] || continue
+        sweep
+    done < <(omniwmctl subscribe windows-changed --format ndjson 2>/dev/null)
+    sleep 2
+done

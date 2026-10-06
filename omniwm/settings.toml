@@ -166,6 +166,7 @@ monitorName = "Built-in Retina Display"
 [scratchpads]
 
 [scratchpads.labels]
+1 = "Calendar"
 
 [statusBar]
 showAppNames = false
