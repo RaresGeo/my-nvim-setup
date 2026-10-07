@@ -24,7 +24,14 @@ return {
 			end
 
 			-- Custom Ctrl+/ keymaps on top of native commenting.
-			-- Map both <C-/> and <C-_> since terminals send Ctrl+/ as Ctrl+_.
+			--
+			-- Both spellings are mapped because which one arrives depends
+			-- on the terminal: <C-/> where it speaks the Kitty keyboard
+			-- protocol and can encode the Ctrl losslessly, <C-_> (0x1F)
+			-- where it falls back to the C0 control character. On macOS
+			-- neither happens on its own -- Alacritty writes a bare `/`,
+			-- which opens a search -- so macos/alacritty/alacritty.toml
+			-- binds Ctrl+/ to 0x1F explicitly.
 			local comment_keys = { "<C-/>", "<C-_>" }
 
 			for _, key in ipairs(comment_keys) do
