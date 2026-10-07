@@ -381,9 +381,10 @@ workspaces_apply() {
 # be assumed; both have to be asserted on arrival.
 #
 # So on docking: unmute, lamp white, sidetone on. Starting from a known state
-# matters because mute is not readable -- CoreAudio's mute flag is write-only --
-# so a mute left over from before the handover would be invisible until you
-# noticed nobody could hear you.
+# matters because a mute left over from before the handover is invisible by
+# design -- micctl mutes the microphone rather than the sink precisely so that
+# nothing can see it -- and the lamp, which is the one indicator, is on the card
+# that just came back from the other machine.
 #
 # Only on the transition into docked. Asserting this every poll would fight the
 # mute key: press Option+B and five seconds later the watcher would unmute you.

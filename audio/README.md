@@ -30,7 +30,7 @@ See [The sidetone](#the-sidetone).
 |------|------|
 | `bin/micctl` | The whole thing: `mute`, `sidetone`, `status`, `levels`, `start`/`stop`/`restart`, and the resident `chain` job. |
 | `com.dotfiles.mic-chain.plist.tpl` | launchd agent for the processing chain. Rendered by `install.sh`, which bakes in the absolute paths launchd needs. |
-| `src/coreaudio-ctl.c` | Reads and sets the input source and the sidetone. macOS shows both in System Settings but ships no CLI for either. Built by `install.sh`. |
+| `src/coreaudio-ctl.c` | Reads and sets the input source, the sidetone, and a named device's capture mute flag and input gain. macOS shows all of them in System Settings but ships no CLI for any, and `SwitchAudioSource` can only reach the mute flag on whatever is the *default* input. Built by `install.sh`. |
 | `~/.config/audio/local.conf` | Device names and gate settings for this machine. Seeded by `install.sh`, not tracked: it is the only per-host part. |
 
 The **Option+B** mute key is a Karabiner rule, so it lives in that module
@@ -80,17 +80,22 @@ with whether they are actually alive.
 
 | | |
 |---|---|
-| 1. mute flag | CoreAudio's own per-device flag, via `SwitchAudioSource -t input -m toggle`, on the default input — which here is the sink, so it silences exactly what every app reads. |
-| 2. sidetone | switched off when muting, on when unmuting. Necessary, not cosmetic: the sidetone is an analog tap inside the card, so muting the host cannot reach it and you would otherwise still hear yourself while muted. |
+| 1. mute flag | CoreAudio's own per-device flag, on **the microphone** — not on the sink that apps read. The chain then captures digital silence and relays it faithfully. See [Why the flag is on the mic](#why-the-flag-is-on-the-mic). |
+| 2. sidetone | switched off when muting, on when unmuting. Necessary, not cosmetic: the sidetone is an analog tap inside the card, taken ahead of the capture stream the flag mutes, so you would otherwise still hear yourself while muted. |
 | 3. lamp | the G6's logo goes red when muted, white when live. |
 
 The order matters. Muting switches the sidetone off *before* repainting the lamp,
-so you stop hearing yourself immediately; unmuting switches it on *after*, so the
-lamp is never white while you are still inaudible.
+so you stop hearing yourself immediately; unmuting clears the flag first and
+paints the lamp *last*, so the lamp is never white while you are still
+inaudible.
 
-Measured at **157–164 ms** end to end, including the HID write for the lamp. It
-all runs inline rather than backgrounded: a backgrounded lamp write could land
-behind a second keypress and leave the colour contradicting the state.
+Measured end to end, including the HID write for the lamp, as medians of six:
+**159 ms to mute, 209 ms to unmute**. It all runs inline rather than
+backgrounded: a backgrounded lamp write could land behind a second keypress and
+leave the colour contradicting the state. The extra 50 ms on the unmute path is
+one more CoreAudio read, which checks that nothing has left a mute flag on the
+sink — unmuting is the "make me audible again" key, so it is the right place to
+pay for that.
 
 The lamp is why `micctl` needs the third-party G6 CLI; the lighting is a vendor
 HID setting and nothing in macOS reaches it. It is deliberately scoped to
@@ -108,24 +113,80 @@ MIC_RGB_LIVE="255 255 255"
 MIC_RGB_MUTED="255 0 0"
 ```
 
-A real mute flag beats setting the volume to zero: there is no level to remember
-on the way back, and it does not fight with whatever you have the input gain set
-to. Verified on the sink with an injected tone: −23 dBFS unmuted, −96 dBFS
-muted.
-
-Two honest limitations:
-
-- **The flag cannot be read back** from the shell, so `micctl status` reports
-  the last state set here rather than CoreAudio's. The hotkey uses
-  SwitchAudioSource's own `toggle`, so the device always flips even if that
-  record has drifted; `micctl mute on` and `off` are absolute.
-- **The hardware mic stays live.** An app pointed directly at the G6 rather
-  than at the sink would still hear you. Nothing here can reach that:
-  `SwitchAudioSource`'s `-m` ignores `-s` and only ever acts on the current
-  default input.
-
 There is deliberately no sound or notification on toggle — the lamp is the
 indicator, and it is visible without taking focus or making noise.
+
+### Why the flag is on the mic
+
+The obvious place for the flag is the sink. It is the default input, so muting
+it silences exactly what every app reads, and `SwitchAudioSource -t input -m
+toggle` is the whole implementation. That is what this did first.
+
+It silences it **visibly**, though. The flag sits on the very device the app is
+holding, so Chrome reads it, and Google Meet answers a deliberate Option+B with
+*"your microphone is muted"* over the top of its own mute button. Being told in
+every call that the thing you just did on purpose is a fault is worse than the
+problem the flag solved.
+
+So the flag moved to the far end of the chain. **No app ever holds the mic** —
+they all hold the sink — so the mic's own flag is invisible to them: the chain
+captures digital silence and relays it faithfully, and what an app sees is a
+live, unmuted device carrying a silent room. There is nothing there to detect,
+and nothing to override.
+
+Measured at the sink, through the running chain, with sox reading what an app
+would read:
+
+| Mic | Peak amplitude at the sink |
+|---|---|
+| live | 0.000639 (a quiet room, through the gate) |
+| muted | **0.000000** — every sample zero |
+
+The write reaches a capture that is already open, so sox never has to be
+restarted around it, and it costs the same 46 ms the `SwitchAudioSource` call
+did (45.5 vs 45.8 ms, 20 writes each).
+
+Two things it gains on the way past, both of which used to be listed here as
+limitations:
+
+- **The state reads back.** The flag on the default input was write-only from
+  the shell, so `micctl status` could only report the last state set here. The
+  mic's flag is readable, so `status` reads the device, `toggle` resolves
+  against the device rather than against a record that can drift, and nothing
+  has to be inferred. `coreaudio-ctl mute set <device> toggle` does the
+  read-and-flip in one process so the keypress pays for one round trip, not two.
+- **The hardware mic no longer stays live.** An app pointed straight at the G6
+  rather than at the sink is now muted too. `SwitchAudioSource` could never
+  reach that: its `-m` ignores `-s` and only ever acts on the current default
+  input, which is why `coreaudio-ctl` grew a `mute` group that takes a device
+  by name.
+
+And two things it costs:
+
+- **It has to be re-asserted.** The mic's mute flag is a USB-audio-class
+  control, so it is volatile exactly like the input source and the sidetone: a
+  re-enumeration clears it and you are live again with the lamp still red. The
+  chain supervisor therefore re-asserts the wanted state from
+  `~/.local/state/audio/muted` on every poll — but only on a disagreement that
+  is still there a poll later, because a keypress writes the device and the
+  state file a few hundred milliseconds apart and catching that half-finished
+  would undo the keypress. That is not hypothetical: it happened once in
+  testing, logged as `'Sound BlasterX G6' is muted while mute is live`.
+  Measured: a flag cleared behind micctl's back comes back after two polls,
+  about 6 s. The same assertion is why undocking cannot leave you live — it
+  follows the chain onto the built-in mic.
+- **A stale flag on the sink is now a silent failure mode.** Nothing here sets
+  it any more, so one that *is* set — left by the older version of this module,
+  or by some app — means every app gets silence however healthy the mic looks.
+  So `micctl status` reports it under `sink flag`, and both `micctl mute off`
+  and the chain supervisor clear it when they see it.
+
+A mic with no mute control of its own falls back to **taking its input gain to
+zero**, which is the same silence and the same invisibility — measured at the
+sink, 0.000613 at the G6's own gain of 0.65 and exactly 0.000000 at zero. It is
+the fallback rather than the mechanism because the level has to be remembered
+across the mute. Every input measured here has a settable mute flag: the G6, the
+built-in mic, and a C920 webcam all report one on the master element.
 
 ### What Option+B costs
 
@@ -239,9 +300,10 @@ set loose enough to only take out static, so the far end hearing *less* than the
 sidetone is the unlikely direction. The deciding factor was that zero latency
 beat hearing the gate.
 
-**So mute has to switch it explicitly.** Muting the host cannot reach a signal
-that never leaves the card — `micctl mute` therefore switches the sidetone and
-repaints the lamp as well as setting the mute flag. See [Mute](#mute).
+**So mute has to switch it explicitly.** The mute flag acts on the capture
+stream the host receives, and the sidetone is an analog tap taken ahead of it,
+so `micctl mute` switches the sidetone and repaints the lamp as well as setting
+the flag rather than assuming one reaches the other. See [Mute](#mute).
 
 ### It resets, and the other machine wants the opposite
 
@@ -332,9 +394,10 @@ the poll loop once sox is up it holds, and the change reaches the running
 capture, so sox does not need restarting around it.
 
 macOS ships no CLI that can set a data source (`SwitchAudioSource` does devices
-and the mute flag, `system_profiler` can only read it), so `install.sh` builds
-`src/input-source.c` to `~/.local/libexec/micctl-input-source` — one clang call,
-two system frameworks, no third-party dependency. Without it `status` still
+and the default input's mute flag, `system_profiler` can only read it), so
+`install.sh` builds `src/coreaudio-ctl.c` to
+`~/.local/libexec/micctl-coreaudio` — one clang call, two system frameworks, no
+third-party dependency. Without it `status` still
 reports the wrong input, it just cannot correct it.
 
 **The CrystalVoice fixes are not affected by any of this.** Those are HID
@@ -352,6 +415,8 @@ tail -f ~/.local/state/audio/mic-chain.log      # the chain says why it is waiti
 | Symptom | Cause |
 |---------|-------|
 | Apps get silence | The chain is not running, or BlackHole is installed but the machine has not been restarted. `micctl status` says which. |
+| An app says your microphone is muted when you muted it deliberately | Not from here: mute never touches the device apps hold. Something has set the mute flag on BlackHole itself — `micctl status` shows it under `sink flag`, and `micctl mute off` or the chain supervisor clears it. |
+| The lamp is red but people can hear you | The mic's mute flag is volatile, so a re-enumeration clears it. The chain re-asserts it after two polls, about 6 s; if it does not, the chain is not running. `micctl status`. |
 | Chain log says "waiting: BlackHole 2ch is not installed" | Restart the machine, or the cask never installed. |
 | No sidetone | `micctl status` prints it under `Sidetone / device`. It is volatile and the desk machine turns it off, so after a USB switch it needs asserting: `micctl sidetone on`, or just re-dock. |
 | Mic indicator always on | Expected: the chain holds the mic open permanently. That is the cost of a gate that applies to outgoing audio. |
