@@ -21,5 +21,14 @@ defaults write com.apple.screencapture location -string "$HOME/Pictures/Screensh
 defaults write com.apple.finder QuitMenuItem -bool true
 defaults write com.apple.finder CreateDesktop -bool false
 
+# The keyboard layout. This Mac's internal keyboard reports itself as British,
+# so macOS chose the British layout at setup -- which puts £ on Shift+3, " on
+# Shift+2 and @ on Shift+', while everything in this repo assumes the US
+# positions. Not a `defaults write`: the running input system owns that domain,
+# so the change has to go through Text Input Services. See keyboard-layout.sh,
+# which is also how to go back.
+"$(cd -P "$(dirname "${BASH_SOURCE[0]}")" && pwd)/keyboard-layout.sh" ||
+    echo "WARNING: keyboard layout unchanged; run macos/keyboard-layout.sh to see why" >&2
+
 killall Finder 2>/dev/null || true
 killall SystemUIServer 2>/dev/null || true

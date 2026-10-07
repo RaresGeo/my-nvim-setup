@@ -8,6 +8,12 @@ section "System"
 sw_vers | paste -sd' ' -
 sysctl -n machdep.cpu.brand_string
 
+# A layout no config file here can state: it is a per-user input source, so a
+# wrong one stays invisible until the day you need a # and get a £.
+section "Keyboard layout"
+defaults read com.apple.HIToolbox AppleCurrentKeyboardLayoutInputSourceID 2>/dev/null \
+    || echo "unset -- macOS is still on whatever it chose at setup"
+
 # While an app holds secure input (a focused password field, Terminal's
 # "Secure Keyboard Entry", ...), no other app sees keystrokes: every global
 # shortcut, AeroSpace's and Karabiner's included, goes dead.
