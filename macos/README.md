@@ -35,6 +35,15 @@ Super as Command and Alt as Option; `option_as_alt` makes Alt a real Meta in the
 terminal, so herdr's `alt+...` keys, zsh word motions and nvim `<M-...>` work
 as on Linux.
 
+Ctrl+/ is bound explicitly, because macOS does not turn Ctrl+punctuation into a
+control character and Alacritty writes the key's own text to the pty -- so
+Ctrl+/ reached nvim as a bare `/` and opened a search instead of commenting the
+line. The binding sends `0x1F` (`<C-_>`, what xterm and VTE send for that key),
+which is one of the two spellings `nvim/lua/plugins/comment.lua` maps. The
+lossless alternative is the CSI-u encoding Alacritty emits once a program asks
+for the Kitty keyboard protocol, but tmux has `extended-keys` off and never
+asks, so nothing inside tmux would carry the Ctrl.
+
 ## When shortcuts stop working
 
 Run `macos/doctor.sh`. If it reports **secure input** held by some app, no
