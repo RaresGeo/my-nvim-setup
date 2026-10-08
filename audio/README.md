@@ -28,7 +28,7 @@ See [The sidetone](#the-sidetone).
 
 | File | Does |
 |------|------|
-| `bin/micctl` | The whole thing: `mute`, `sidetone`, `status`, `levels`, `start`/`stop`/`restart`, and the resident `chain` job. |
+| `bin/micctl` | The whole thing: `mute`, `sidetone`, `ready`, `status`, `levels`, `start`/`stop`/`restart`, and the resident `chain` job. |
 | `com.dotfiles.mic-chain.plist.tpl` | launchd agent for the processing chain. Rendered by `install.sh`, which bakes in the absolute paths launchd needs. |
 | `src/coreaudio-ctl.c` | Reads and sets the input source, the sidetone, and a named device's capture mute flag and input gain. macOS shows all of them in System Settings but ships no CLI for any, and `SwitchAudioSource` can only reach the mute flag on whatever is the *default* input. Built by `install.sh`. |
 | `~/.config/audio/local.conf` | Device names and gate settings for this machine. Seeded by `install.sh`, not tracked: it is the only per-host part. |
@@ -405,10 +405,106 @@ settings and they persist in the device's own firmware, so they carry to any
 host — see `~/personal/sound-blasterx-g6-linux.md` on the desk machine. Only the
 audio-class controls (source selection, mixer volumes, sidetone) are volatile.
 
+## The card is not ready when it appears
+
+A USB sound card arriving across a switch is **listed by CoreAudio before it
+will accept a write**, and a write landing in that window is how the docking on
+2026-10-08 went wrong. `dock-watch.log`:
+
+```
+applying: docked
+  microphone: could not reach it (could not mute 'Sound BlasterX G6')
+```
+
+The mic assertion fires on the *keyboard* appearing, because the keyboard is
+what tells this Mac it is docked — and the card is a separate device behind the
+same switch, so the keyboard being up only means the card is on its way. The
+chain log from the same minute shows what it was doing instead of coming up:
+
+```
+12:43:26 micctl[chain]: device changed, restarting
+12:43:29 micctl[chain]: starting on 'MacBook Pro Microphone'
+12:43:36 micctl[chain]: device changed, restarting
+12:43:39 micctl[chain]: starting on 'MacBook Pro Microphone'
+12:43:46 micctl[chain]: device changed, restarting
+...
+```
+
+`device changed` is the G6 appearing; `starting on 'MacBook Pro Microphone'`
+three seconds later is it having gone again. So it was **visible for under three
+seconds at a time, on a ten-second cycle, four cycles running** — the restart
+loop, with the click and the lamp dropping out that go with a card
+re-enumerating. The chain was riding every cycle of it, killing sox and starting
+a new one each time.
+
+### What "ready" means
+
+`micctl ready` exits 0 when the pinned device passes three tests, each strictly
+stronger than the one before:
+
+| | |
+|---|---|
+| attached | CoreAudio lists it as an input at all — `SwitchAudioSource -a`. |
+| answering | it returns its own mute flag through `coreaudio-ctl`. Being listed is not the same as being usable, and that gap is the whole bug: the write that failed went to a device the attachment test had already accepted. |
+| settled | both of the above have held **at every check** for `MIC_SETTLE_SECONDS`, which is what a card stuck re-enumerating can never manage. |
+
+The USB tree was considered as a fourth test and left out. `ioreg -p IOUSB` sees
+the device node *before* CoreAudio publishes it, so as a gate it is the weaker
+of the two signals and adds nothing on top; the one write that does not go
+through CoreAudio is the lamp, over HID, and that one is best-effort already.
+
+`MIC_SETTLE_SECONDS` is **12**, and the figure comes from the log rather than
+from taste. A settle window *shorter* than the re-enumeration period can be
+satisfied inside a single appearance of a card that is cycling — which is the
+one case it exists to catch — so it has to beat the measured ten seconds rather
+than merely feel generous. Nothing watches the card continuously either (the
+chain checks every 2 s, `dockctl` every 5 s), so "held at every check" also
+means no two checks further apart than `MIC_SETTLE_GAP`, 15 s; without that, a
+stamp left by a docking an hour ago would read as a settled card the instant
+this one came back.
+
+### What waits, and what does not
+
+**`dockctl` arms rather than asserts.** The transition into docked records that
+an assertion is wanted and writes nothing; every poll after it asks `micctl
+ready` and does the work on the first poll that says yes. The five-second poll
+loop *is* the retry, so there is no sleep inside an apply — which would stall
+the workspace reconcile that shares it — and no fixed delay to guess. A card
+that is still restarting simply never reads as settled and never gets written
+to. After `MIC_APPLY_DEADLINE` (300 s) it gives up and says so, because an armed
+assertion that waits for ever is one that fires at a baffling moment three hours
+later.
+
+**The chain waits by resolving elsewhere.** An unsettled pinned device reads to
+`resolve_mic` exactly like an absent one, so the chain stays on
+`MIC_FALLBACK` and switches across once, when the card is actually up, instead
+of following it through every cycle of a restart loop.
+
+**Option+B does not wait.** A keypress has to act. A card mid-restart is a worse
+reason to swallow a mute than it is to delay an assertion nobody asked for, so
+`micctl mute` writes to the pinned device whatever the gate says.
+
+Nothing here is silent about the wait:
+
+```bash
+micctl ready        # exit 0 and "ready", or the reason it is not
+micctl status       # a `warm-up` line under Chain, with the elapsed figure
+dockctl status      # says when an assertion is armed, and what it is waiting on
+```
+
+```
+  mic            MacBook Pro Microphone
+  warm-up        'Sound BlasterX G6' is still settling after a re-enumeration -- nothing is written to it until that clears
+```
+
+A machine with no pinned `MIC_DEVICE` skips all of this: there is no card being
+handed across a switch, so there is nothing to wait for.
+
 ## Troubleshooting
 
 ```bash
 micctl status                                   # devices, gate, agent health
+micctl ready                                    # is the card up enough to write to
 tail -f ~/.local/state/audio/mic-chain.log      # the chain says why it is waiting
 ```
 
@@ -416,6 +512,9 @@ tail -f ~/.local/state/audio/mic-chain.log      # the chain says why it is waiti
 |---------|-------|
 | Apps get silence | The chain is not running, or BlackHole is installed but the machine has not been restarted. `micctl status` says which. |
 | An app says your microphone is muted when you muted it deliberately | Not from here: mute never touches the device apps hold. Something has set the mute flag on BlackHole itself — `micctl status` shows it under `sink flag`, and `micctl mute off` or the chain supervisor clears it. |
+| The lamp is wrong for 10-15 s after docking | Expected: nothing is written to the card until it has been attached and answering for `MIC_SETTLE_SECONDS`. `micctl status` shows the countdown under `warm-up`. |
+| The lamp never goes white after docking, and `dockctl status` says an assertion is armed | The card is not settling. `micctl ready` says which test it is failing — `not attached` means the switch did not hand it over, `still settling` means it is re-enumerating in a loop. |
+| `dock-watch.log` says `microphone: gave up after 300s` | The card never arrived. It stayed with the desk machine, or the USB switch did not hand it over; `micctl ready` says which. |
 | The lamp is red but people can hear you | The mic's mute flag is volatile, so a re-enumeration clears it. The chain re-asserts it after two polls, about 6 s; if it does not, the chain is not running. `micctl status`. |
 | Chain log says "waiting: BlackHole 2ch is not installed" | Restart the machine, or the cask never installed. |
 | No sidetone | `micctl status` prints it under `Sidetone / device`. It is volatile and the desk machine turns it off, so after a USB switch it needs asserting: `micctl sidetone on`, or just re-dock. |

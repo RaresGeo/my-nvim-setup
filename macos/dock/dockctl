@@ -9,7 +9,7 @@
 # What a state change applies:
 #   1. Alacritty font size      (via a generated import -- see font_apply)
 #   2. OmniWM workspace placement (so nothing is stranded on an invisible panel)
-#   3. The desk microphone      (see mic_apply)
+#   3. The desk microphone      (see mic_pending_run)
 #
 # Usage:
 #   dockctl status          print the detected state and what is currently set
@@ -21,7 +21,10 @@
 #   dockctl undock          force undocked
 #   dockctl probe           dump what the detector sees (use this at the desk)
 #
-# Set MIC_APPLY=0 to leave the microphone alone on docking.
+# Set MIC_APPLY=0 to leave the microphone alone on docking. The microphone is
+# asserted a few polls AFTER docking rather than at the moment of it, because
+# the keyboard that signals the dock comes up before the sound card behind the
+# same switch does; `dockctl status` says when one is still waiting.
 
 set -euo pipefail
 
@@ -57,6 +60,10 @@ WS_INTERNAL_MATCH="${WS_INTERNAL_MATCH:-Built-in}"
 WS_INTERNAL_WORKSPACES="${WS_INTERNAL_WORKSPACES:-10}"
 STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/dock"
 STATE_FILE="$STATE_DIR/state"
+# When the docked transition happened, while its microphone assertion is still
+# waiting for the card. A file rather than a variable because the watch loop
+# re-execs this script for every poll, so nothing in memory outlives one.
+MIC_PENDING_FILE="$STATE_DIR/mic-pending"
 
 say() { printf '%s\n' "$*"; }
 note() { printf '  %s\n' "$*"; }
@@ -388,7 +395,33 @@ workspaces_apply() {
 #
 # Only on the transition into docked. Asserting this every poll would fight the
 # mute key: press Option+B and five seconds later the watcher would unmute you.
+#
+# BUT NOT AT THE MOMENT OF THE TRANSITION. The keyboard is the dock signal and
+# the card is a different device behind the same switch, so "the keyboard is
+# here" is not "the card is ready" -- it is only "the card is on its way". This
+# used to assert immediately and the docking on 2026-10-08 is what that costs:
+#
+#   applying: docked
+#     microphone: could not reach it (could not mute 'Sound BlasterX G6')
+#
+# A failed write is the visible half. The card was also cycling -- the chain log
+# has it appearing and vanishing on a ten-second period, four times over -- with
+# the click and the lamp dropping out that go with a card re-enumerating.
+#
+# So the transition only ARMS the assertion, and every poll after it asks micctl
+# whether the card is attached, answering and settled before writing anything.
+# The five-second poll loop is the retry: no sleeping inside an apply, which
+# would stall the workspace reconcile that shares it, and no fixed delay to
+# guess either -- a card that is still restarting simply never reads as settled
+# and never gets written to. See the warm-up section of micctl for what settled
+# means and where its twelve seconds comes from.
 MIC_APPLY="${MIC_APPLY:-1}"
+# How long to keep waiting for the card after docking before giving up on it
+# and saying so. Five minutes is far past any plausible warm-up, so reaching it
+# means the card is not coming -- it stayed with the desk machine, or the switch
+# did not hand over -- and an armed assertion that waits for ever is a thing
+# that fires at a baffling moment three hours later.
+MIC_APPLY_DEADLINE="${MIC_APPLY_DEADLINE:-300}"
 
 find_micctl() {
     local c
@@ -398,19 +431,54 @@ find_micctl() {
     return 1
 }
 
-mic_apply() {
-    local state="$1" ctl
-    (( MIC_APPLY )) || return 0
-    [[ "$state" == docked ]] || return 0
-    find_micctl >/dev/null || return 0
+# Armed on the transition into docked, and cleared on the transition out of it:
+# undocking means the card has gone back to the other machine, so an assertion
+# still waiting for it is one that must not fire when it returns on its own.
+mic_pending_arm() {
+    mkdir -p "$STATE_DIR"
+    date '+%s' > "$MIC_PENDING_FILE"
+}
+
+mic_pending_clear() { rm -f "$MIC_PENDING_FILE"; }
+
+# Runs on EVERY poll, not only on a change, because the card arrives after the
+# keyboard does and the whole point is to catch the moment it is ready.
+mic_pending_run() {
+    local state="$1" since now waited ctl reason out
+    [[ -r "$MIC_PENDING_FILE" ]] || return 0
+    # Disarm rather than merely decline, so switching MIC_APPLY off does not
+    # leave a stamp that `status` reports for ever.
+    if ! (( MIC_APPLY )); then mic_pending_clear; return 0; fi
+    if [[ "$state" != docked ]]; then mic_pending_clear; return 0; fi
+    since="$(cat "$MIC_PENDING_FILE" 2>/dev/null)"
+    if [[ -z "$since" ]]; then mic_pending_clear; return 0; fi
+    now="$(date '+%s')"
+    waited=$(( now - since ))
+    if ! find_micctl >/dev/null; then mic_pending_clear; return 0; fi
     ctl="$(find_micctl)"
+
+    if ! reason="$("$ctl" ready 2>&1)"; then
+        if (( waited > MIC_APPLY_DEADLINE )); then
+            note "microphone: gave up after ${waited}s -- $reason"
+            mic_pending_clear
+        fi
+        return 0
+    fi
+
+    # One attempt once it is ready, then disarm either way. Retrying a write
+    # that failed on a card that just told us it was ready means hammering a
+    # card that is in trouble, which is the shape of the problem rather than
+    # the fix -- and the chain re-asserts the mute flag from its own state file
+    # regardless, so what a failure here actually loses is the lamp and the
+    # sidetone. `micctl mute off` puts both back by hand.
+    mic_pending_clear
     # `mute off` paints the lamp white and switches the sidetone on by itself --
     # that is the unmute path in micctl, and duplicating it here would mean two
     # places to keep in step.
     if out="$("$ctl" mute off 2>&1)"; then
-        note "microphone: $out, lamp white, sidetone on"
+        note "microphone: $out, lamp white, sidetone on (${waited}s after docking)"
     else
-        note "microphone: could not reach it ($out)"
+        note "microphone: could not reach it ($out), ${waited}s after docking"
     fi
 }
 
@@ -432,7 +500,12 @@ mic_apply() {
 
 apply_state() {
     local state="$1"
-    say "applying: $state"
+    # Dated, because this log has to be read against micctl's -- which is dated
+    # already -- and the pair of them is the only way to tell "the card was not
+    # ready" from "the card was never asked". Correlating them by hand across an
+    # undated log is what made the 2026-10-08 docking take as long to read as it
+    # did.
+    say "$(date '+%Y-%m-%d %H:%M:%S') applying: $state"
     case "$state" in
         docked)   font_apply "$FONT_SIZE_DOCKED" ;;
         undocked) font_apply "$FONT_SIZE_UNDOCKED" ;;
@@ -440,7 +513,19 @@ apply_state() {
     esac
     mkdir -p "$STATE_DIR"
     workspaces_apply "$state"
-    mic_apply "$state"
+    if (( MIC_APPLY )) && [[ "$state" == docked ]]; then
+        mic_pending_arm
+        # Try once here as well as on the following polls: re-docking after a
+        # short undock can find the card already up and settled, and there is no
+        # reason to make that case wait for a poll. The note is only for the case
+        # that is actually going to wait.
+        mic_pending_run "$state"
+        if [[ -r "$MIC_PENDING_FILE" ]]; then
+            note "microphone: waiting for the card to settle before asserting it"
+        fi
+    else
+        mic_pending_clear
+    fi
     printf '%s\n' "$state" > "$STATE_FILE"
     display_signature > "$STATE_DIR/displays"
 }
@@ -464,6 +549,19 @@ case "$cmd" in
         if [[ -s "$STATE_DIR/blocked" ]]; then
             say "workspaces stuck: $(cat "$STATE_DIR/blocked")"
         fi
+        if [[ -r "$MIC_PENDING_FILE" ]]; then
+            armed="$(cat "$MIC_PENDING_FILE" 2>/dev/null)"
+            [[ -n "$armed" ]] || armed="$(date '+%s')"
+            # `|| true` because `ready` exits non-zero while it is waiting,
+            # which under `set -e` would take the whole status page down with it
+            # -- and the line that says why is the one worth having here.
+            if ctl="$(find_micctl)"; then
+                why="$("$ctl" ready 2>&1)" || true
+            else
+                why="no micctl to ask"
+            fi
+            say "microphone: assertion armed $(( $(date '+%s') - armed ))s ago -- $why"
+        fi
         ;;
     apply)
         detected="$(detect_state)"
@@ -482,6 +580,9 @@ case "$cmd" in
             # quiet unless it actually moves something.
             workspaces_apply "$detected" quiet
         fi
+        # After the branch, not inside it: the card turns up some polls after
+        # the keyboard, which is a poll with nothing else to do.
+        mic_pending_run "$detected"
         ;;
     watch)
         # Resident loop, because launchd's StartInterval could not be trusted to

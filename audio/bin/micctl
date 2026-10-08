@@ -172,6 +172,47 @@ MIC_GAIN="${MIC_GAIN:-0}"
 SOX_BUFFER="${SOX_BUFFER:-1024}"
 
 
+# How long the pinned device has to have been continuously attached and
+# answering before anything is written to it.
+#
+# A card arriving across a USB switch is listed by CoreAudio before it will
+# accept a write, and writing inside that window is how the docking on
+# 2026-10-08 went wrong. dock-watch.log:
+#
+#   applying: docked
+#     microphone: could not reach it (could not mute 'Sound BlasterX G6')
+#
+# The assertion fires on the keyboard appearing, because the keyboard is the
+# dock signal -- and the card behind the same switch was not up yet. The chain
+# log from the same minute shows what it was doing instead of coming up:
+#
+#   12:43:26 device changed, restarting
+#   12:43:29 starting on 'MacBook Pro Microphone'
+#   12:43:36 device changed, restarting      (and again at :46 and :56)
+#
+# "device changed" is the G6 appearing; "starting on 'MacBook Pro Microphone'"
+# three seconds later is it having gone again. So it was visible for under three
+# seconds at a time, on a ten-second cycle, four cycles running.
+#
+# That ten seconds is where the default comes from, rather than taste. A settle
+# window SHORTER than the re-enumeration period can be satisfied inside a single
+# appearance of a card that is cycling -- which is the one case this exists to
+# catch -- so the window has to beat the period, not merely feel generous.
+MIC_SETTLE_SECONDS="${MIC_SETTLE_SECONDS:-12}"
+# Nothing here watches continuously: the chain checks every SUPERVISE_POLL and
+# dockctl every five seconds. So "continuously attached" is really "attached at
+# every check, with no two checks further apart than this". Without the gap test
+# a stamp left behind by a docking an hour ago would read as a settled card the
+# instant this one came back.
+MIC_SETTLE_GAP="${MIC_SETTLE_GAP:-15}"
+SETTLE_FILE="$STATE_DIR/settle"
+# The colour we last painted. The lamp is HID, so it persists in the card's
+# firmware and cannot be read back -- this file is the only record of it, and it
+# is what keeps a repeated paint from becoming a repeated firmware write.
+# Cleared when the card goes away, because it comes back carrying whatever the
+# other machine left on it.
+LAMP_FILE="$STATE_DIR/lamp"
+
 SUPERVISE_RETRY="${SUPERVISE_RETRY:-3}"
 SUPERVISE_POLL="${SUPERVISE_POLL:-2}"
 
@@ -186,11 +227,88 @@ device_exists() {
     SwitchAudioSource -a -t "$2" 2>/dev/null | grep -Fxq "$1"
 }
 
+# Why the pinned device cannot be written to yet, or nothing when it can.
+#
+# Three tests, each strictly stronger than the one before it:
+#
+#   attached   CoreAudio lists it as an input at all.
+#   answering  it returns its own mute flag. Being listed is not the same as
+#              being usable, and that gap is the whole bug: the docking that
+#              failed wrote to a device `device_exists` had already accepted.
+#   settled    both of the above have held at every check for
+#              MIC_SETTLE_SECONDS, which is what a card stuck re-enumerating
+#              can never manage.
+#
+# The USB tree was considered as a fourth test and left out. `ioreg -p IOUSB`
+# sees the device node BEFORE CoreAudio publishes it, so as a gate it is the
+# weaker of the two signals and adds nothing on top. The one write that does not
+# go through CoreAudio is the lamp, over HID, and that one is best-effort
+# already -- so the stronger signal covers the writes that can actually fail.
+#
+# An unpinned device is always ready: there is no card being handed across a
+# switch, so there is nothing to wait for. Making every machine pay for this
+# one's USB switch is how a module stops being portable.
+#
+# This gates the assertions nobody asked for, NOT the mute key. A keypress has
+# to act: a card mid-restart is a worse reason to swallow Option+B than it is to
+# delay an unmute that only the dock watcher wanted. So `mute` goes through
+# mic_device_fast, which does not consult any of this.
+mic_ready_reason() {
+    local first="" last="" now elapsed
+    [[ -n "$MIC_DEVICE" ]] || return 0
+    if ! device_exists "$MIC_DEVICE" input; then
+        rm -f "$SETTLE_FILE" "$LAMP_FILE"
+        printf "'%s' is not attached" "$MIC_DEVICE"
+        return 0
+    fi
+    if [[ -x "$COREAUDIO_CTL" ]] \
+       && ! "$COREAUDIO_CTL" mute get "$MIC_DEVICE" >/dev/null 2>&1; then
+        rm -f "$SETTLE_FILE"
+        printf "'%s' is listed but not answering yet" "$MIC_DEVICE"
+        return 0
+    fi
+    now=$(date '+%s')
+    [[ -r "$SETTLE_FILE" ]] && read -r first last < "$SETTLE_FILE"
+    if [[ -z "$first" || -z "$last" ]] || (( now - last > MIC_SETTLE_GAP )); then
+        first="$now"
+    fi
+    mkdir -p "$STATE_DIR"
+    printf '%s %s\n' "$first" "$now" > "$SETTLE_FILE"
+    elapsed=$(( now - first ))
+    (( elapsed >= MIC_SETTLE_SECONDS )) && return 0
+    # Deliberately the same string for the whole window. Callers log a reason
+    # once per DISTINCT reason, so a countdown here would put a line in the log
+    # every poll; the elapsed figure lives in `micctl status` instead, where it
+    # can be read as often as you like without filling a file.
+    printf "'%s' is still settling after a re-enumeration" "$MIC_DEVICE"
+}
+
+mic_ready() { [[ -z "$(mic_ready_reason)" ]]; }
+
+# How far into the settle window the device is, for `status`. Empty when there
+# is no window open.
+mic_settle_elapsed() {
+    local first="" last=""
+    [[ -r "$SETTLE_FILE" ]] && read -r first last < "$SETTLE_FILE"
+    [[ -n "$first" ]] || return 0
+    printf '%s' "$(( $(date '+%s') - first ))"
+}
+
 resolve_mic() {
     local cur
-    # A pinned device wins, but only while it is actually attached: pinning the
-    # desk mic must not leave the chain dead the moment you undock.
-    if [[ -n "$MIC_DEVICE" ]] && device_exists "$MIC_DEVICE" input; then
+    # A pinned device wins, but only while it is attached AND settled: pinning
+    # the desk mic must not leave the chain dead the moment you undock, and must
+    # not have sox open the card while the card is still coming up.
+    #
+    # An unsettled card reads here exactly like an absent one, which is what
+    # stops the churn the chain log shows: it followed the card into every one
+    # of those ten-second cycles -- kill sox, start on the built-in mic, see the
+    # card again, kill sox -- where now it simply stays on the fallback and
+    # switches over once, when the card is actually up.
+    #
+    # mic_ready subsumes the device_exists call this used to make and adds one
+    # ~34ms read on top of it, paid on a two-second poll.
+    if [[ -n "$MIC_DEVICE" ]] && mic_ready; then
         printf '%s' "$MIC_DEVICE"
         return
     fi
@@ -375,6 +493,9 @@ chain_keep() {
     ensure_input_source "$1"
     ensure_mute "$1"
     ensure_sink_live
+    # After ensure_mute, so the colour follows the state the device actually
+    # ended up in rather than the one we were about to assert.
+    ensure_lamp "$1"
     stall_check chain
 }
 
@@ -689,6 +810,22 @@ sidetone_state() {
     esac
 }
 
+# $1 = muted|live. $2 = "settled" to skip the readiness check, for callers that
+# have already resolved the device and therefore know it is up.
+#
+# This is the ONLY write in the module that goes over HID rather than through
+# CoreAudio, which makes it the only one that persists in the card's firmware --
+# and therefore the only one whose damage outlives the write. So it is also the
+# one that must never land on a card that is still arriving.
+#
+# The desk machine gets this right structurally rather than by checking: its
+# `claim_lamp` fires once on the absent -> present edge, and the edge is only
+# reached after `find_card` has seen the card registered with ALSA. Nothing
+# there ever paints a card mid-arrival. The equivalent here is the chain's own
+# poll loop, which is the thing that watches for arrival -- see ensure_lamp.
+#
+# Skipping rather than queueing is deliberate: the chain repaints on its next
+# poll anyway, so a skipped lamp is late by two seconds rather than lost.
 rgb_apply() {
     local want
     case "$1" in
@@ -698,8 +835,41 @@ rgb_apply() {
     esac
     [[ -n "$want" ]] || return 0
     [[ -x "$G6_CLI" ]] || return 0
+    if [[ "${2:-}" != settled ]] && ! mic_ready; then
+        return 0
+    fi
+    # Never write the same colour twice. A no-op paint is still a firmware
+    # write, and the card is the thing we are trying to stop poking.
+    [[ "$(cat "$LAMP_FILE" 2>/dev/null)" == "$want" ]] && return 0
+    # Record the ATTEMPT, before making it, not the success. Recording success
+    # would mean a CLI that fails gets retried on every poll -- a firmware write
+    # every two seconds at a card that is already unhappy, which is the exact
+    # hammering this file argues against everywhere else. One attempt per colour
+    # per arrival is the whole budget; the record is cleared when the card leaves,
+    # so a genuine failure is retried on the next arrival rather than never.
+    mkdir -p "$STATE_DIR"
+    printf '%s\n' "$want" > "$LAMP_FILE"
     # shellcheck disable=SC2086 -- $want is three separate arguments.
-    "$G6_CLI" --lighting-rgb $want >/dev/null 2>&1 || true
+    "$G6_CLI" --lighting-rgb $want >/dev/null 2>&1 \
+        || log lamp "could not paint the lamp $want; leaving it until the card returns"
+    return 0
+}
+
+# Paint the lamp for whatever mute state is wanted, from the chain's poll loop.
+#
+# This is where the lamp actually gets painted now, rather than on the keypress:
+# the chain is the one thing here that watches the card arrive, so it is the one
+# place that can paint on arrival rather than at a moment chosen by something
+# else. $1 is the device the supervisor resolved, which by then has passed the
+# readiness gate -- so the check is already made and is not paid again here.
+#
+# The LAMP_FILE guard makes this a no-op on every poll but the first after a
+# colour changes, so it costs one file read per poll and no USB traffic.
+ensure_lamp() {
+    local want
+    [[ -n "$MIC_DEVICE" && "$1" == "$MIC_DEVICE" ]] || return 0
+    [[ -e "$MUTE_STATE_FILE" ]] && want=muted || want=live
+    rgb_apply "$want" settled
 }
 
 # toggle, on and off are one function because the device decides the outcome
@@ -949,6 +1119,19 @@ status() {
     echo "Chain"
     printf '  mic            %s%s\n' "$mic" \
         "$(device_exists "$mic" input && echo "" || echo "  [MISSING]")"
+    # Never let this page be silent about the gate. A pinned card that is up but
+    # being held off reads exactly like one that is being ignored, and a page
+    # that cannot tell those apart is the failure this module keeps having:
+    # every indicator green, nothing actually working.
+    if [[ -n "$MIC_DEVICE" ]]; then
+        local warm; warm="$(mic_ready_reason)"
+        if [[ -n "$warm" ]]; then
+            printf '  warm-up        %s -- nothing is written to it until that clears\n' \
+                "$warm"
+        else
+            printf '  warm-up        settled %ss ago\n' "$(mic_settle_elapsed)"
+        fi
+    fi
     local src
     src="$(input_source_of "$mic")"
     if [[ -n "$src" ]]; then
@@ -979,6 +1162,14 @@ status() {
     printf '  output         %s\n' "$(SwitchAudioSource -t output -c 2>/dev/null)"
     printf '  lamp           %s\n' \
         "$( [[ -n "$MIC_RGB_LIVE$MIC_RGB_MUTED" ]] && echo "live '$MIC_RGB_LIVE', muted '$MIC_RGB_MUTED'" || echo "(unmanaged)" )"
+    # What is actually on the card, as far as anything here can know: the lamp
+    # is HID and does not read back, so this is the record of the last paint
+    # rather than a reading. Shown because it is the only indicator there is,
+    # and "configured" and "painted" come apart whenever the card was away.
+    if [[ -n "$MIC_RGB_LIVE$MIC_RGB_MUTED" ]]; then
+        printf '  painted        %s\n' \
+            "$(cat "$LAMP_FILE" 2>/dev/null || echo "nothing yet -- the chain paints it on arrival")"
+    fi
     echo
     echo "The sidetone is the device's own analog tap, so it carries no gate --"
     echo "Meet and Slack gate on their side. It is also why mute has to switch it"
@@ -1013,6 +1204,9 @@ micctl -- microphone chain, sidetone and mute
                                        Mutes the mic, not the sink, so apps
                                        cannot see it and cannot object
   micctl sidetone [on|off|status]      the device's analog monitoring
+  micctl ready                         exit 0 once the pinned mic is attached,
+                                       answering and settled. What dockctl waits
+                                       for before it asserts anything on docking
   micctl status                        devices, gate settings, agent health
   micctl levels [seconds]              measure the noise floor, suggest a threshold
   micctl start|stop|restart [chain]
@@ -1043,6 +1237,11 @@ case "${1:-status}" in
             status) echo "$(sidetone_state)" ;;
             *) usage; exit 1 ;;
         esac
+        ;;
+    ready)
+        why="$(mic_ready_reason)"
+        if [[ -n "$why" ]]; then echo "$why"; exit 1; fi
+        echo "ready"
         ;;
     chain)   supervise chain resolve_mic : chain_sox chain_keep ;;
     start|stop|restart)
