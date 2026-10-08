@@ -380,12 +380,13 @@ workspaces_apply() {
 # The Sound BlasterX G6 rides the same USB switch as the keyboard, so docking is
 # also the moment this Mac takes the microphone back from the desk machine.
 #
-# Two of the card's settings are USB-audio-class controls, which means volatile:
-# the device resets them to its own defaults on every re-enumeration, and taking
-# it across the switch is a re-enumeration. Worse, the desk machine wants the
-# opposite of what this one wants -- it monitors in software, so it deliberately
-# switches the card's analog sidetone OFF while it holds it. Neither setting can
-# be assumed; both have to be asserted on arrival.
+# The card's sidetone is a USB-audio-class control, which means volatile: the
+# device resets it on every re-enumeration, and taking it across the switch is a
+# re-enumeration. Worse, the desk machine wants the opposite of what this one
+# wants -- it monitors in software, so it deliberately switches the card's analog
+# sidetone OFF while it holds it. So it cannot be assumed; it has to be asserted
+# on arrival. The lamp is in the same position for a different reason: it is a
+# firmware setting, so it comes back carrying whatever the other machine left.
 #
 # So on docking: unmute, lamp white, sidetone on. Starting from a known state
 # matters because a mute left over from before the handover is invisible by
@@ -472,10 +473,10 @@ mic_pending_run() {
     # regardless, so what a failure here actually loses is the lamp and the
     # sidetone. `micctl mute off` puts both back by hand.
     mic_pending_clear
-    # `mute off` paints the lamp white and switches the sidetone on by itself --
-    # that is the unmute path in micctl, and duplicating it here would mean two
-    # places to keep in step.
-    if out="$("$ctl" mute off 2>&1)"; then
+    # `claim` is micctl's "a card just arrived" entry point: unmute, sidetone
+    # on, lamp live, and whichever input settings that machine has turned on.
+    # Keeping the list there rather than here means one place to keep in step.
+    if out="$("$ctl" claim 2>&1)"; then
         note "microphone: $out, lamp white, sidetone on (${waited}s after docking)"
     else
         note "microphone: could not reach it ($out), ${waited}s after docking"
