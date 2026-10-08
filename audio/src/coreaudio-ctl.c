@@ -1,7 +1,7 @@
 // coreaudio-ctl -- read and set CoreAudio device properties that macOS exposes
 // in System Settings but ships no command line for.
 //
-// Two of them, both needed by micctl and both VOLATILE -- they are USB-audio-class
+// Four of them, all needed by micctl and all VOLATILE -- they are USB-audio-class
 // controls, so the device resets them to its defaults on every re-enumeration.
 // Handing the card to another machine over a USB switch and taking it back is a
 // re-enumeration.
@@ -10,6 +10,15 @@
 //   playthru       the device's own analog monitoring of that input back to its
 //                  output: zero latency, because the signal never reaches the
 //                  host. This is the sidetone.
+//   mute           the device's own capture mute flag, reached BY NAME. That is
+//                  the part SwitchAudioSource cannot do: its -m ignores -s and
+//                  only ever acts on the current default input. micctl needs the
+//                  flag on the microphone rather than on the default input,
+//                  because the default input here is the sink every app holds --
+//                  and an app that can see the flag treats a deliberate mute as
+//                  a fault and says so over its own mute button.
+//   volume         the input gain as a 0..1 scalar, which is how a microphone
+//                  with no mute control of its own gets muted.
 //
 // macOS shows this as "Input Source" under System Settings > Sound > Input, for
 // devices that have more than one physical input behind one USB interface. The
@@ -32,7 +41,16 @@
 //   coreaudio-ctl input-source set  <device> <substring>
 //   coreaudio-ctl playthru     get  <device>
 //   coreaudio-ctl playthru     set  <device> <0|1> [dB]
+//   coreaudio-ctl mute         get  <device>
+//   coreaudio-ctl mute         set  <device> <0|1|toggle>
+//   coreaudio-ctl volume       get  <device>
+//   coreaudio-ctl volume       set  <device> <0..1>
+//
+// Exit 3 is reserved for "this device has no such control", as distinct from a
+// read or a write that failed, so a caller can fall back rather than report a
+// mute it did not actually get.
 #include <CoreAudio/CoreAudio.h>
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -43,6 +61,8 @@ static const AudioObjectPropertyAddress kCurrent = {
     kAudioDevicePropertyDataSource, kAudioObjectPropertyScopeInput, kAudioObjectPropertyElementMain };
 static const AudioObjectPropertyAddress kThru = {
     kAudioDevicePropertyPlayThru, kAudioDevicePropertyScopePlayThrough, kAudioObjectPropertyElementMain };
+static const AudioObjectPropertyAddress kMute = {
+    kAudioDevicePropertyMute, kAudioObjectPropertyScopeInput, kAudioObjectPropertyElementMain };
 
 // The name of one source id. It is an AudioValueTranslation, not a plain get:
 // the id goes in and a CFString comes back.
@@ -141,10 +161,126 @@ static int playthru(AudioObjectID dev, int argc, char **argv) {
     return 2;
 }
 
+// The capture mute flag. It lives on the master element: every input measured
+// here -- a Sound BlasterX G6, the built-in mic, a C920 webcam -- answers on
+// element 0 and on no channel element, and reports it settable there.
+//
+// Unlike SwitchAudioSource's write-only toggle this reads back, so the state
+// never has to be inferred from a record that can drift.
+static int mute_cmd(AudioObjectID dev, const char *verb, const char *arg) {
+    if (!AudioObjectHasProperty(dev, &kMute)) {
+        fprintf(stderr, "device has no input mute control\n");
+        return 3;
+    }
+    UInt32 cur = 0, sz = sizeof cur;
+    if (AudioObjectGetPropertyData(dev, &kMute, 0, NULL, &sz, &cur) != noErr) {
+        fprintf(stderr, "could not read the input mute flag\n");
+        return 1;
+    }
+    if (!strcmp(verb, "get")) { printf("%u\n", cur ? 1u : 0u); return 0; }
+    if (strcmp(verb, "set")) { fprintf(stderr, "unknown mute command: %s\n", verb); return 2; }
+    if (!arg) { fprintf(stderr, "mute set needs 0, 1 or toggle\n"); return 2; }
+
+    // `toggle` reads and flips inside this one process on purpose. It runs on a
+    // keypress that already pays for a sidetone write and an HID write for the
+    // lamp, and a separate read from the shell would add a whole second CoreAudio
+    // round trip -- 46ms measured -- to that budget.
+    UInt32 want = !strcmp(arg, "toggle") ? (cur ? 0u : 1u) : (atoi(arg) ? 1u : 0u);
+
+    Boolean settable = 0;
+    if (AudioObjectIsPropertySettable(dev, &kMute, &settable) != noErr || !settable) {
+        fprintf(stderr, "device's input mute flag is read-only\n");
+        return 3;
+    }
+    OSStatus st = AudioObjectSetPropertyData(dev, &kMute, 0, NULL, sizeof want, &want);
+    if (st != noErr) {
+        fprintf(stderr, "could not set the input mute flag: OSStatus %d\n", (int)st);
+        return 1;
+    }
+    // Read back rather than trusting the write, for the same reason playthru
+    // does: CoreAudio returns noErr for a set the driver then undoes.
+    UInt32 rb = 0; sz = sizeof rb;
+    if (AudioObjectGetPropertyData(dev, &kMute, 0, NULL, &sz, &rb) == noErr && (rb ? 1u : 0u) != want) {
+        fprintf(stderr, "input mute read back as %u, not %u\n", rb, want);
+        return 1;
+    }
+    printf("%u\n", want);
+    return 0;
+}
+
+// How many input channels the device has, so the volume walk below has an end.
+// Two on failure, which is what every device here actually has.
+static UInt32 input_channels(AudioObjectID dev) {
+    AudioObjectPropertyAddress a = {
+        kAudioDevicePropertyStreamConfiguration, kAudioObjectPropertyScopeInput,
+        kAudioObjectPropertyElementMain };
+    UInt32 sz = 0;
+    if (AudioObjectGetPropertyDataSize(dev, &a, 0, NULL, &sz) != noErr || sz == 0) return 2;
+    AudioBufferList *bl = malloc(sz);
+    if (!bl) return 2;
+    UInt32 n = 0;
+    if (AudioObjectGetPropertyData(dev, &a, 0, NULL, &sz, bl) == noErr)
+        for (UInt32 i = 0; i < bl->mNumberBuffers; i++) n += bl->mBuffers[i].mNumberChannels;
+    free(bl);
+    return n ? n : 2;
+}
+
+// The input gain, as a 0..1 scalar. Which element carries it is per device --
+// the built-in mic has it on the master element and the G6 on its two channels
+// and not on the master -- so every settable element from 0 up to the channel
+// count is written, and a get reports the loudest.
+static int volume_cmd(AudioObjectID dev, const char *verb, const char *arg) {
+    UInt32 top = input_channels(dev);
+
+    if (!strcmp(verb, "get")) {
+        // The loudest, so that a device with one channel already pulled down
+        // comes back to the level it was really recording at rather than to the
+        // quieter side of an imbalance.
+        Float32 best = -1;
+        for (UInt32 el = 0; el <= top; el++) {
+            AudioObjectPropertyAddress a = {
+                kAudioDevicePropertyVolumeScalar, kAudioObjectPropertyScopeInput, el };
+            Float32 v = 0; UInt32 sz = sizeof v;
+            if (!AudioObjectHasProperty(dev, &a)) continue;
+            if (AudioObjectGetPropertyData(dev, &a, 0, NULL, &sz, &v) == noErr && v > best) best = v;
+        }
+        if (best < 0) { fprintf(stderr, "device has no input volume control\n"); return 3; }
+        printf("%.4f\n", best);
+        return 0;
+    }
+    if (strcmp(verb, "set")) { fprintf(stderr, "unknown volume command: %s\n", verb); return 2; }
+    if (!arg) { fprintf(stderr, "volume set needs a 0..1 scalar\n"); return 2; }
+
+    Float32 want = (Float32)atof(arg);
+    if (want < 0) want = 0;
+    if (want > 1) want = 1;
+    int wrote = 0, refused = 0;
+    for (UInt32 el = 0; el <= top; el++) {
+        AudioObjectPropertyAddress a = {
+            kAudioDevicePropertyVolumeScalar, kAudioObjectPropertyScopeInput, el };
+        Boolean settable = 0;
+        if (!AudioObjectHasProperty(dev, &a)) continue;
+        if (AudioObjectIsPropertySettable(dev, &a, &settable) != noErr || !settable) continue;
+        if (AudioObjectSetPropertyData(dev, &a, 0, NULL, sizeof want, &want) != noErr) { refused = 1; continue; }
+        Float32 rb = -1; UInt32 sz = sizeof rb;
+        if (AudioObjectGetPropertyData(dev, &a, 0, NULL, &sz, &rb) == noErr && fabsf(rb - want) > 0.01f) refused = 1;
+        else wrote++;
+    }
+    if (!wrote) {
+        fprintf(stderr, "device has no settable input volume\n");
+        return refused ? 1 : 3;
+    }
+    if (refused) { fprintf(stderr, "input volume was refused on some channels\n"); return 1; }
+    printf("%.4f\n", want);
+    return 0;
+}
+
 int main(int argc, char **argv) {
     if (argc < 4) {
         fprintf(stderr, "usage: coreaudio-ctl input-source get|list|set <device> [source]\n");
         fprintf(stderr, "       coreaudio-ctl playthru get|set <device> [0|1] [dB]\n");
+        fprintf(stderr, "       coreaudio-ctl mute get|set <device> [0|1|toggle]\n");
+        fprintf(stderr, "       coreaudio-ctl volume get|set <device> [0..1]\n");
         return 2;
     }
     // coreaudio-ctl <group> <verb> <device> [...]
@@ -153,6 +289,10 @@ int main(int argc, char **argv) {
     AudioObjectID dev = find_device(devname);
     if (dev == kAudioObjectUnknown) { fprintf(stderr, "no such device: %s\n", devname); return 1; }
 
+    if (!strcmp(group, "mute"))
+        return mute_cmd(dev, cmd, argc > 4 ? argv[4] : NULL);
+    if (!strcmp(group, "volume"))
+        return volume_cmd(dev, cmd, argc > 4 ? argv[4] : NULL);
     if (!strcmp(group, "playthru")) {
         // Shift so playthru() sees its own verb at argv[1] and args from argv[3].
         char *sub[6] = { argv[0], argv[2], argv[3], argc > 4 ? argv[4] : NULL,

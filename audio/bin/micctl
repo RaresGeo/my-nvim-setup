@@ -18,12 +18,13 @@
 #            side, and hearing yourself with no delay matters more here than
 #            hearing the gate work. A software relay through the sink was tried
 #            first and is in the history if the trade ever needs revisiting.
-#   mute     sets CoreAudio's own mute flag on whatever is the default input,
-#            which in this setup is the sink -- so it silences precisely what
-#            every app reads. A real mute flag rather than a volume of zero,
-#            so unmuting has no level to remember. The hardware mic stays live,
-#            so an app deliberately pointed at the mic itself still hears you;
-#            see hw_mute() for why nothing here can reach that.
+#   mute     sets CoreAudio's own mute flag on the MICROPHONE, at the far end
+#            of the chain, rather than on the sink that apps actually hold. The
+#            chain then captures digital silence and relays it faithfully, so
+#            what an app sees is a live, unmuted device carrying a silent room.
+#            That is the point: a flag on the sink is a flag the app can read,
+#            and Google Meet answers one by telling you your mic is muted over
+#            the top of its own mute button. See hw_mute().
 #
 # The chain is run by launchd (see ../install.sh) and supervises its
 # own sox process in a loop. sox exits whenever CoreAudio reconfigures under it
@@ -47,6 +48,9 @@ PATH="/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbi
 
 STATE_DIR="${MIC_STATE_DIR:-$HOME/.local/state/audio}"
 MUTE_STATE_FILE="$STATE_DIR/muted"
+# Only used by the volume fallback in hw_mute_by_volume, for hardware with no
+# mute control of its own.
+MUTE_VOLUME_FILE="$STATE_DIR/premute-gain"
 
 # ---------------------------------------------------------------------------
 # Tunables. Every one of these can be overridden from the environment, or
@@ -82,9 +86,10 @@ MIC_INPUT_SOURCE="${MIC_INPUT_SOURCE:-}"
 # System Settings but ships no CLI for either.
 COREAUDIO_CTL="${MIC_COREAUDIO_CTL:-$HOME/.local/libexec/micctl-coreaudio}"
 
-# The mic's own lamp as a mute indicator. Mute already silences the sidetone --
-# monitoring reads the sink and the mute flag is on the sink -- but that only
-# tells you while you are talking. A colour tells you at a glance.
+# The mic's own lamp as a mute indicator. Muting switches the sidetone off as
+# well, so you can hear that you are muted -- but only while you are talking,
+# and nothing else shows it: a mute on the mic is deliberately invisible to
+# every app. A colour tells you at a glance.
 #
 # Both empty means "do not touch the lighting", which is right for a device that
 # has none. "R G B", 0-255 each. Needs the third-party G6 CLI, which is the only
@@ -254,6 +259,8 @@ chain_sox() {
     # subshell, killing it left sox running and reparented onto launchd, and it
     # kept the CoreAudio device open forever.
     ensure_default_input
+    ensure_sink_live
+    ensure_mute "$1"
     local err; err="$(sox_err_file chain)"
     : > "$err"
     exec sox -q --buffer "$SOX_BUFFER" \
@@ -366,6 +373,8 @@ reap_stray_sox() {
 # undoes behind us, and whether the stream is still actually carrying audio.
 chain_keep() {
     ensure_input_source "$1"
+    ensure_mute "$1"
+    ensure_sink_live
     stall_check chain
 }
 
@@ -465,18 +474,165 @@ supervise() {
 # Mute
 # ---------------------------------------------------------------------------
 
-# CoreAudio's own per-device mute flag, via SwitchAudioSource. This is a real
-# mute rather than a volume of zero, so unmuting does not have to remember a
-# level, and it applies to the device the system calls the default input.
+# Mute belongs on the MICROPHONE, not on the sink, and that is the whole of it.
 #
-# With the sink set as the default input -- which is the point of this setup, so
-# that a newly installed app needs no configuring -- that device is the sink, so
-# muting it silences precisely what every app reads. The hardware mic stays
-# live, so an app deliberately pointed at the mic itself would still hear you;
-# nothing here can reach that, because SwitchAudioSource's -m ignores -s and
-# only ever acts on the current default.
+# The obvious implementation is CoreAudio's mute flag on the default input, and
+# that is what this was: the sink IS the default input here, so the flag
+# silenced precisely what every app reads, with nothing but SwitchAudioSource to
+# do it. It silences it *visibly*, though. The flag sits on the very device the
+# app is holding, so Chrome reads it and Google Meet answers a deliberate
+# Option+B with "your microphone is muted" over the top of its own mute button.
+# Being told in every call that the thing you just did on purpose is a fault is
+# worse than the problem the flag solved.
+#
+# So the flag moves to the far end of the chain. No app ever holds the mic --
+# they all hold the sink -- so the mic's own flag is invisible to them: the
+# chain captures digital silence and relays it faithfully, and what an app sees
+# is a live, unmuted device carrying a silent room. There is nothing there to
+# detect, and nothing to override.
+#
+# Measured at the sink, through the running chain: peak amplitude 0.000639 with
+# the mic live, exactly 0.000000 with it muted. The write reaches a capture that
+# is already open, so sox never has to be restarted around it, and it costs the
+# same 46ms the SwitchAudioSource call did.
+#
+# Two things it gains on the way past. This flag reads back, where the default
+# input's never did, so the state is no longer a record that can drift from the
+# device; and an app pointed straight at the mic rather than at the sink is now
+# muted too, which nothing here could reach before.
+#
+# SwitchAudioSource cannot do any of this -- its -m ignores -s and only ever
+# acts on the current default input -- which is why `coreaudio-ctl mute` exists.
+#
+# $1 = 1 | 0 | toggle, $2 = device, defaulting to the mic the chain is reading.
+# Echoes the state it left behind, so no caller has to read it back.
 hw_mute() {
-    SwitchAudioSource -t input -m "$1" >/dev/null 2>&1
+    local want="$1" dev="${2:-}" out rc
+    [[ -n "$dev" ]] || dev="$(mic_device_fast)"
+    if [[ ! -x "$COREAUDIO_CTL" ]]; then
+        echo "$COREAUDIO_CTL is missing -- run ./install.sh audio" >&2
+        return 1
+    fi
+    out="$("$COREAUDIO_CTL" mute set "$dev" "$want" 2>/dev/null)"; rc=$?
+    if (( rc == 0 )); then
+        [[ "$out" == 1 ]] && printf 'muted' || printf 'live'
+        return 0
+    fi
+    # 3 is specifically "this device has no mute control of its own". Anything
+    # else is a write that failed, and claiming a mute that did not happen is
+    # the one outcome worth refusing outright.
+    if (( rc != 3 )); then
+        echo "could not mute '$dev'" >&2
+        return 1
+    fi
+    hw_mute_by_volume "$want" "$dev"
+}
+
+# A mic with no mute control of its own: take its input gain to zero instead.
+# The same silence and the same invisibility -- measured at the sink, peak
+# 0.000613 at the G6's own gain of 0.65 and exactly 0.000000 at zero -- but the
+# level has to be remembered across the mute, which is why this is the fallback
+# and not the mechanism. Every input measured here has a settable mute flag
+# (the G6, the built-in mic, a C920); this is for hardware that does not.
+hw_mute_by_volume() {
+    local want="$1" dev="$2" now muted=0 back
+    if ! now="$("$COREAUDIO_CTL" volume get "$dev" 2>/dev/null)"; then
+        echo "'$dev' has neither a mute control nor an input gain" >&2
+        return 1
+    fi
+    awk -v v="$now" 'BEGIN { exit !(v > 0) }' || muted=1
+    [[ "$want" == toggle ]] && want=$(( muted ? 0 : 1 ))
+    if (( want )); then
+        # Never record zero as the level to come back to: that is this
+        # function's own work seen on a second mute, and restoring it would
+        # leave the mic silent with everything else reporting live.
+        (( muted )) || printf '%s\n' "$now" > "$MUTE_VOLUME_FILE"
+        "$COREAUDIO_CTL" volume set "$dev" 0 >/dev/null || return 1
+        printf 'muted'
+    else
+        back="$(cat "$MUTE_VOLUME_FILE" 2>/dev/null)"
+        [[ -n "$back" ]] || back=1
+        "$COREAUDIO_CTL" volume set "$dev" "$back" >/dev/null || return 1
+        printf 'live'
+    fi
+}
+
+# The state, read from the device. The old flag on the sink was write-only from
+# the shell, which is why this used to be a file and why `status` had to label
+# it "last set here"; the mic's flag is not, so there is nothing to infer.
+#
+# Fails, printing nothing, when there is no device to ask -- the mic is on the
+# other side of the USB switch, or the helper was never built.
+hw_mute_state() {
+    local dev="${1:-}" v
+    [[ -x "$COREAUDIO_CTL" ]] || return 1
+    [[ -n "$dev" ]] || dev="$(mic_device_fast)"
+    if v="$("$COREAUDIO_CTL" mute get "$dev" 2>/dev/null)" && [[ -n "$v" ]]; then
+        [[ "$v" == 1 ]] && printf 'muted' || printf 'live'
+        return 0
+    fi
+    # No mute control, so zero input gain is what mute means on this device.
+    v="$("$COREAUDIO_CTL" volume get "$dev" 2>/dev/null)" && [[ -n "$v" ]] || return 1
+    awk -v x="$v" 'BEGIN { exit !(x > 0) }' && printf 'live' || printf 'muted'
+}
+
+# Nothing here mutes the sink any more, so a mute flag on it is either left over
+# from the version that did or was set by something else -- and either way it is
+# a dead microphone that every indicator calls healthy, which is the exact
+# failure this module exists to stop. Clear it.
+#
+# Unlike dockctl's sidetone assertion this cannot fight the mute key, because
+# the key does not touch this flag at all.
+ensure_sink_live() {
+    local label="${1:-chain}" v
+    [[ -x "$COREAUDIO_CTL" ]] || return 0
+    v="$("$COREAUDIO_CTL" mute get "$SINK_DEVICE" 2>/dev/null)" || return 0
+    [[ "$v" == 1 ]] || return 0
+    log "$label" "$SINK_DEVICE's own mute flag was set; clearing it -- mute lives on the mic now"
+    "$COREAUDIO_CTL" mute set "$SINK_DEVICE" 0 >/dev/null 2>&1 || true
+}
+
+# The mic's mute flag is volatile like every other audio-class control on this
+# card, and the chain also changes which device it is holding -- undocking moves
+# it to the built-in mic, which was never muted. Either one would leave you live
+# with the lamp still red, so the wanted state is re-asserted from the state
+# file on every poll.
+#
+# This is the assertion dockctl deliberately does not make on a timer, and the
+# difference is what it asserts: dockctl would put back a fixed state and so
+# unmute you a moment after you pressed Option+B, where this can only ever put
+# back what the key itself last asked for.
+#
+# It acts only on a disagreement that is still there a poll later, which is not
+# caution for its own sake: a keypress writes the device and then the state
+# file, and a poll landing between the two sees a half-finished mute. Caught
+# once that way in testing -- "'Sound BlasterX G6' is muted while mute is live"
+# a few milliseconds after `mute on` had set the flag and not yet written the
+# file -- and the assertion promptly undid the keypress. Wanting it twice costs
+# one extra poll on the cases this is actually for, which are re-enumerations
+# and device changes: those do not resolve themselves.
+MUTE_DRIFT_SEEN=""
+ensure_mute() {
+    local dev="$1" want now
+    [[ -x "$COREAUDIO_CTL" ]] || return 0
+    [[ -e "$MUTE_STATE_FILE" ]] && want=muted || want=live
+    now="$(hw_mute_state "$dev")" || return 0
+    if [[ "$now" == "$want" ]]; then
+        MUTE_DRIFT_SEEN=""
+        return 0
+    fi
+    if [[ "$MUTE_DRIFT_SEEN" != "$now" ]]; then
+        MUTE_DRIFT_SEEN="$now"
+        return 0
+    fi
+    MUTE_DRIFT_SEEN=""
+    log chain "'$dev' is $now while mute is $want, re-asserting"
+    if [[ "$want" == muted ]]; then
+        hw_mute 1 "$dev" >/dev/null || true
+    else
+        hw_mute 0 "$dev" >/dev/null || true
+    fi
+    return 0
 }
 
 # Paint the lamp for a mute state. Measured at 74ms end to end, which is under
@@ -546,49 +702,50 @@ rgb_apply() {
     "$G6_CLI" --lighting-rgb $want >/dev/null 2>&1 || true
 }
 
-mute_toggle() {
+# toggle, on and off are one function because the device decides the outcome
+# now rather than the state file: `toggle` is resolved inside the helper, in the
+# same process that writes the flag, and all three paths then follow whatever
+# state comes back.
+#
+# The order is load-bearing on both paths. Muting switches the sidetone off
+# before repainting the lamp, so you stop hearing yourself the moment you press
+# the key; unmuting writes the flag and clears the sink before the lamp goes
+# white, so the lamp is never white while you are still inaudible.
+#
+# Measured end to end, including the HID write for the lamp, as medians of six:
+# 159ms to mute and 209ms to unmute, against 164ms for the old flag on the sink.
+# The extra 50ms on the unmute path is the one additional read that checks the
+# sink's own flag, and unmuting is the direction that can afford it.
+mute_apply() {
+    local want state
+    case "$1" in
+        on)     want=1 ;;
+        off)    want=0 ;;
+        toggle) want=toggle ;;
+        *)      usage; return 1 ;;
+    esac
     mkdir -p "$STATE_DIR"
-    # SwitchAudioSource's own toggle, so the device state always flips, even if
-    # the record below has drifted. CoreAudio's mute flag cannot be read back
-    # from the shell, so that record is for display and nothing else.
-    if ! hw_mute toggle; then
-        echo "could not reach the default input device" >&2
-        return 1
-    fi
-    if [[ -e "$MUTE_STATE_FILE" ]]; then
-        rm -f "$MUTE_STATE_FILE"
-        sidetone_apply on
-        rgb_apply live
-        echo "unmuted"
-    else
+    state="$(hw_mute "$want")" || return 1
+    if [[ "$state" == muted ]]; then
         : > "$MUTE_STATE_FILE"
         sidetone_apply off
         rgb_apply muted
         echo "muted"
+    else
+        rm -f "$MUTE_STATE_FILE"
+        ensure_sink_live mute
+        sidetone_apply on
+        rgb_apply live
+        echo "unmuted"
     fi
 }
 
-mute_set() {
-    mkdir -p "$STATE_DIR"
-    case "$1" in
-        on)
-            hw_mute mute || { echo "could not reach the default input device" >&2; return 1; }
-            : > "$MUTE_STATE_FILE"
-            sidetone_apply off
-            rgb_apply muted
-            echo "muted"
-            ;;
-        off)
-            hw_mute unmute || { echo "could not reach the default input device" >&2; return 1; }
-            rm -f "$MUTE_STATE_FILE"
-            sidetone_apply on
-            rgb_apply live
-            echo "unmuted"
-            ;;
-    esac
-}
-
+# The device if it can be reached, the state file if it cannot -- which is the
+# order of trust now that the flag reads back. The file is still what the chain
+# supervisor re-asserts from, so it is not merely a cache: it is the record of
+# what was asked for, across a mic that comes and goes.
 mute_status() {
+    hw_mute_state && { echo; return 0; }
     [[ -e "$MUTE_STATE_FILE" ]] && echo "muted" || echo "live"
 }
 
@@ -766,13 +923,28 @@ input_source_is_mic() {
     esac
 }
 
+# The sink's own mute flag. Nothing here sets it any more, so it should read
+# clear; a set one is a microphone that is silent for every app while every
+# other indicator on this page is green.
+sink_mute_line() {
+    local v
+    [[ -x "$COREAUDIO_CTL" ]] || { printf 'unknown (%s is missing)' "$COREAUDIO_CTL"; return; }
+    v="$("$COREAUDIO_CTL" mute get "$SINK_DEVICE" 2>/dev/null)" || { printf 'unknown'; return; }
+    case "$v" in
+        0) printf 'clear' ;;
+        1) printf 'SET -- apps are getting silence whatever the mic does; micctl mute off clears it' ;;
+        *) printf 'unknown' ;;
+    esac
+}
+
 status() {
     local mic
     mic=$(resolve_mic)
 
     echo "Mute"
-    printf '  state          %s (last set here; CoreAudio mute is write-only)\n' "$(mute_status)"
-    printf '  muting         %s\n' "$(SwitchAudioSource -t input -c 2>/dev/null)"
+    printf '  state          %s\n' "$(mute_status)"
+    printf '  applied to     %s  (the mic, not the sink)\n' "$mic"
+    printf '  sink flag      %s\n' "$(sink_mute_line)"
     echo
     echo "Chain"
     printf '  mic            %s%s\n' "$mic" \
@@ -812,6 +984,10 @@ status() {
     echo "Meet and Slack gate on their side. It is also why mute has to switch it"
     echo "explicitly: muting the host cannot reach a signal that never leaves the card."
     echo
+    echo "Mute sets the flag on the mic, so apps see a live device carrying a silent"
+    echo "room and cannot tell you are muted. The lamp and the sidetone are the only"
+    echo "indicators; nothing will say it for you, which is the point."
+    echo
     if [[ -n "$src" ]] && ! input_source_is_mic "$src"; then
         echo "NOTE: '$mic' is set to '$src', which carries no microphone, so the"
         echo "      chain is relaying silence and there is nothing to hear yourself"
@@ -833,7 +1009,9 @@ usage() {
 micctl -- microphone chain, sidetone and mute
 
   micctl mute [toggle|on|off|status]   default: toggle  (bound to Option+B)
-                                       also switches the sidetone and the lamp
+                                       also switches the sidetone and the lamp.
+                                       Mutes the mic, not the sink, so apps
+                                       cannot see it and cannot object
   micctl sidetone [on|off|status]      the device's analog monitoring
   micctl status                        devices, gate settings, agent health
   micctl levels [seconds]              measure the noise floor, suggest a threshold
@@ -854,8 +1032,7 @@ agents_for() {
 case "${1:-status}" in
     mute)
         case "${2:-toggle}" in
-            toggle) mute_toggle ;;
-            on|off) mute_set "$2" ;;
+            toggle|on|off) mute_apply "${2:-toggle}" ;;
             status) mute_status ;;
             *) usage; exit 1 ;;
         esac
