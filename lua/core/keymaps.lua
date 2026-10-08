@@ -40,6 +40,12 @@ vim.keymap.set("n", "<C-S-N>", function()
     harpoon:list():next()
 end, { desc = "Next harpoon file" })
 
+-- Harpoon's own quick menu buffer: delete a line to remove that file,
+-- move a line to reorder it, then close the menu (or :w) to apply.
+vim.keymap.set("n", "<leader>he", function()
+    harpoon.ui:toggle_quick_menu(harpoon:list())
+end, { desc = "Edit harpoon list (remove/reorder files)" })
+
 vim.keymap.set("n", "<leader>tt", open_terminal_in_current_dir, { desc = "Open terminal in current file's directory" })
 
 -- Telescope keymaps
