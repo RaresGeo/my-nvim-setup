@@ -72,12 +72,13 @@ After each update, it will open a floating window with some commands. You can fo
 
 ### Harpoon (Quick File Switching)
 
-| Keymap      | Action                |
-| ----------- | --------------------- |
-| `<leader>a` | Add file to harpoon   |
-| `<C-e>`     | Open harpoon window   |
-| `<C-S-P>`   | Previous harpoon file |
-| `<C-S-N>`   | Next harpoon file     |
+| Keymap       | Action                             |
+| ------------ | ---------------------------------- |
+| `<leader>a`  | Add file to harpoon                |
+| `<C-e>`      | Open harpoon window                |
+| `<leader>he` | Edit harpoon list (remove/reorder) |
+| `<C-S-P>`    | Previous harpoon file              |
+| `<C-S-N>`    | Next harpoon file                  |
 
 ### LSP & Code Navigation
 
