@@ -64,7 +64,7 @@ mv ~/.config/nvim ~/.config/dotfiles
 | `herdr` | `~/.config/herdr/config.toml` | Omarchy (ships with it) or macOS (Homebrew) |
 | `omarchy` | Hyprland overrides, theme hooks | Omarchy |
 | [`macos`](macos/README.md) | Alacritty, theme snapshot, CLI tools, system defaults, dock-state switch | macOS |
-| [`audio`](audio/README.md) | Gated mic into BlackHole, the card's own sidetone, Option+B mute with a lamp | macOS |
+| [`audio`](audio/README.md) | Option+B mute on the card's capture side, its own sidetone, and the mute lamp | macOS |
 | [`karabiner`](karabiner/README.md) | Built-in keyboard remap, terminal launchers, Alacritty close fix, notification dismiss | macOS |
 | [`omniwm`](omniwm/README.md) | Tiling window manager, dwindle layout | macOS |
 

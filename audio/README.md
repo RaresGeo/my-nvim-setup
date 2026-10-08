@@ -1,527 +1,318 @@
 # audio
 
-A gated microphone with sidetone on macOS: the job EasyEffects does on the
-Linux boxes and VoiceMeeter Potato does on Windows.
+Mute, sidetone and the mute lamp for the desk microphone on macOS. Apps talk to
+the sound card directly — there is no virtual device, no processing chain and
+nothing resident.
 
 ```bash
 ./install.sh audio
 ```
 
-macOS has no equivalent of either. It cannot route a mic into an output at all,
-and it has no insert point where a gate could sit, so this builds one out of a
-virtual audio device and two SoX pipelines.
-
-```
-                    ┌─────────────── micctl chain ───────────────┐
-built-in mic  ──────│  remix ─ → highpass 80Hz → noise gate      │─────┐
-(or any input)      └────────────────────────────────────────────┘      │
-                                                                        ▼
-                                                               ┌─────────────────┐
-                              Teams, browser, anything  ◀───────│  BlackHole 2ch  │
-                              (their input device)              └─────────────────┘
-                                                                        │
-```
-
-Hearing yourself does not come through any of that: it is the card's own analog
-tap, inside the device and ahead of the ADC, so it has no latency and no gate.
-See [The sidetone](#the-sidetone).
-
 | File | Does |
 |------|------|
-| `bin/micctl` | The whole thing: `mute`, `sidetone`, `ready`, `status`, `levels`, `start`/`stop`/`restart`, and the resident `chain` job. |
-| `com.dotfiles.mic-chain.plist.tpl` | launchd agent for the processing chain. Rendered by `install.sh`, which bakes in the absolute paths launchd needs. |
-| `src/coreaudio-ctl.c` | Reads and sets the input source, the sidetone, and a named device's capture mute flag and input gain. macOS shows all of them in System Settings but ships no CLI for any, and `SwitchAudioSource` can only reach the mute flag on whatever is the *default* input. Built by `install.sh`. |
-| `~/.config/audio/local.conf` | Device names and gate settings for this machine. Seeded by `install.sh`, not tracked: it is the only per-host part. |
+| `bin/micctl` | `mute`, `sidetone`, `claim`, `ready`, `status`. One-shot; nothing runs in the background. |
+| `src/coreaudio-ctl.c` | Reads and sets a named device's capture mute flag, its input source, its sidetone and its input gain. macOS shows all of them in System Settings but ships no CLI for any, and `SwitchAudioSource` can only reach the mute flag on whatever is the *default* input. Built by `install.sh`. |
+| `~/.config/audio/local.conf` | Device names and colours for this machine. Seeded by `install.sh`, not tracked: it is the only per-host part. |
 
 The **Option+B** mute key is a Karabiner rule, so it lives in that module
 (`karabiner/rules/microphone.json`) the way `rules/omniwm.json` drives the
-omniwm module's CLI. Install both modules to get the key as well as the chain.
+omniwm module's CLI. Install both to get the key as well as the CLI.
 
-## No per-app setup
+## There used to be a gate here
 
-**BlackHole 2ch is the system default input**, so an app picks the gate up with
-no configuration at all, including an app installed next year. Nothing has to be
-set per app.
+This module was a gated-microphone chain: physical mic → SoX highpass and noise
+gate → BlackHole 2ch, with BlackHole as the system default input so every app
+picked the gate up with no per-app setup at all. It worked, it measured well,
+and it is in the git history if it is ever wanted back.
 
-That only works because the chain does **not** follow the default input. It
-reads a pinned hardware device:
+It went on 2026-10-08, and the reason is worth keeping because the obvious
+reading of it is wrong.
 
-```bash
-MIC_DEVICE="Sound BlasterX G6"          # ~/.config/audio/local.conf
-MIC_FALLBACK="MacBook Pro Microphone"
-```
-
-Without the pin, "follow the default input" plus "the default input is the sink"
-is a feedback loop: the chain reads its own output. `resolve_mic` refuses to
-follow the default when it resolves to the sink for that reason.
-
-**The pin is checked for presence, not trusted.** This desk's mic is behind a
-USB switch and vanishes whenever the switch hands it to the other machine, so a
-pin that was taken at face value would leave the chain dead half the time.
-Instead the supervisor re-resolves every couple of seconds and restarts sox when
-the answer changes, and apps never notice because the device *they* hold is the
-sink, which never goes away. Nothing has to be re-selected anywhere:
-
-| `MIC_DEVICE` | Resolves to |
-|---|---|
-| pinned, present | the pinned device |
-| pinned, unplugged | `MIC_FALLBACK` (the built-in mic) |
-| unpinned, default input is the sink | `MIC_FALLBACK`, refusing the loop |
-| pinned to anything else present | that device |
-
-Because apps read BlackHole, **the chain is a single point of failure for your
-microphone**: if it is not running, apps get silence rather than raw mic. That is
-why both agents are `RunAtLoad` and `KeepAlive`, and why `micctl status` leads
-with whether they are actually alive.
-
-## Mute
-
-**Option+B** does three things, in this order:
+The card kept re-enumerating on arrival at this Mac — clicking, lamp dropping
+out, off the USB bus and back on a ten-second cycle. **The chain was not the
+cause.** That was measured, not assumed: with both agents booted out and no
+`sox`, `micctl` or `dockctl` process running at all, a handover produced
 
 | | |
 |---|---|
-| 1. mute flag | CoreAudio's own per-device flag, on **the microphone** — not on the sink that apps read. The chain then captures digital silence and relays it faithfully. See [Why the flag is on the mic](#why-the-flag-is-on-the-mic). |
-| 2. sidetone | switched off when muting, on when unmuting. Necessary, not cosmetic: the sidetone is an analog tap inside the card, taken ahead of the capture stream the flag mutes, so you would otherwise still hear yourself while muted. |
-| 3. lamp | the G6's logo goes red when muted, white when live. |
+| 13:39:27 | gone (switched to the desk machine) |
+| 13:39:52 | back on the Mac |
+| 13:39:56 | **dropped after 4s** |
+| 13:40:02 | back |
+| 13:40:06 | **dropped after 4s** |
+| 13:40:13 | back |
 
-The order matters. Muting switches the sidetone off *before* repainting the lamp,
-so you stop hearing yourself immediately; unmuting clears the flag first and
-paints the lamp *last*, so the lamp is never white while you are still
-inaudible.
+Two full re-enumeration cycles with nothing of ours running. The same handover
+to the desk machine is clean every time, so it is this Mac's side — but it is
+upstream of anything in this repo, and it is still open.
 
-Measured end to end, including the HID write for the lamp, as medians of six:
-**159 ms to mute, 209 ms to unmute**. It all runs inline rather than
-backgrounded: a backgrounded lamp write could land behind a second keypress and
-leave the colour contradicting the state. The extra 50 ms on the unmute path is
-one more CoreAudio read, which checks that nothing has left a mute flag on the
-sink — unmuting is the "make me audible again" key, so it is the right place to
-pay for that.
+What the chain *was* is the largest thing this Mac did to a freshly-arrived
+card: a capture stream opened within a second of enumeration, a default-input
+change, and a kill/restart of sox on every one of those cycles. Removing it
+removes this machine's whole contribution to the noise while the real cause is
+unresolved. That is the whole argument — not that it was to blame.
 
-The lamp is why `micctl` needs the third-party G6 CLI; the lighting is a vendor
-HID setting and nothing in macOS reaches it. It is deliberately scoped to
-`--lighting-rgb`, since the same CLI can reach the CrystalVoice DSP that is
-switched **off** in this device's firmware on purpose. Verified with
-`--dry-run --debug`: that flag emits the three lighting frames, three times, and
-nothing else.
+**The cost, plainly: there is no noise gate any more.** Meet, Slack and Teams
+gate on their own side, which was always the argument for the sidetone carrying
+no gate, and is now the argument for there being no gate here at all. OBS and
+anything else that wants one has its own.
 
-Both are opt-in, because they are specific to a device that has them:
+What it buys beyond the card: nothing here opens the device until an app does,
+and that turned out to matter — see below.
+
+## Mute
 
 ```bash
-MIC_SIDETONE="on"                  # local.conf
-MIC_SIDETONE_DB=6
+micctl mute            # toggle, which is what Option+B runs
+micctl mute on|off
+micctl mute status
+```
+
+Mute sets CoreAudio's mute flag on the **capture side of the card**, and the
+reason is not a technicality.
+
+The obvious implementation is the mute flag on the default input — which is now
+the card itself, so the flag would sit on the very device every app is holding.
+Chrome reads it, and Google Meet answers a deliberate Option+B with *"your
+microphone is muted"* over the top of its own mute button. Being told in every
+call that the thing you just did on purpose is a fault is worse than the
+problem the flag solved.
+
+So the flag goes where the app is not looking. What an app sees is a live,
+unmuted device carrying a silent room: nothing to detect, nothing to override.
+Measured through a capture that was already open — peak amplitude `0.000639`
+live, exactly `0.000000` muted.
+
+`SwitchAudioSource` cannot do this: its `-m` ignores `-s` and only ever acts on
+the current default input. That is why `coreaudio-ctl` exists.
+
+The consequence is that **a mute here is invisible to everything except the
+lamp and the sidetone.** Nothing will tell you. That is the point, and it is
+also why both indicators matter.
+
+## Sidetone
+
+The card's own analog monitoring of the mic back into its output. It is inside
+the device and ahead of the ADC, so it has no latency — and for the same reason
+it carries **no gate**, and cannot: nothing in the card can gate it. Its mic
+DSP is Noise Reduction, AEC, Smart Volume and Mic EQ, all off in firmware on
+purpose, and NR is spectral suppression rather than a gate.
+
+A software relay through a virtual device was tried first, carried the gate
+properly, and lost on latency and on wedging. It is in the history.
+
+It is a USB-audio-class control, so it is **volatile** — reset on every
+re-enumeration — and it is contested: the desk machine switches it *off* when
+it takes the card, because it monitors in software there and running both
+sidetones at once comb-filters the voice into something thin and echoey. So it
+cannot be assumed on either side. Each machine asserts what it wants on
+arrival, and here the mute key owns it: muting the host cannot reach an analog
+tap that never leaves the card.
+
+## The lamp, and why it is the one gated write
+
+```bash
 MIC_RGB_LIVE="255 255 255"
 MIC_RGB_MUTED="255 0 0"
 ```
 
-There is deliberately no sound or notification on toggle — the lamp is the
-indicator, and it is visible without taking focus or making noise.
+The lamp is a **vendor HID setting**, not an audio control, and that distinction
+runs through the whole module:
 
-### Why the flag is on the mic
+> **HID settings persist in the card's firmware. Audio-class settings do not.**
 
-The obvious place for the flag is the sink. It is the default input, so muting
-it silences exactly what every app reads, and `SwitchAudioSource -t input -m
-toggle` is the whole implementation. That is what this did first.
+The CrystalVoice fixes and the mic boost carry to any host untouched. The input
+source, the sidetone and the mixer volumes reset on every re-enumeration. So the
+lamp is the only write here whose effect **outlives the write** — and therefore
+the only one that must never land on a card that has not finished arriving.
 
-It silences it **visibly**, though. The flag sits on the very device the app is
-holding, so Chrome reads it, and Google Meet answers a deliberate Option+B with
-*"your microphone is muted"* over the top of its own mute button. Being told in
-every call that the thing you just did on purpose is a fault is worse than the
-problem the flag solved.
+Two different bars, for two different moments:
 
-So the flag moved to the far end of the chain. **No app ever holds the mic** —
-they all hold the sink — so the mic's own flag is invisible to them: the chain
-captures digital silence and relays it faithfully, and what an app sees is a
-live, unmuted device carrying a silent room. There is nothing there to detect,
-and nothing to override.
-
-Measured at the sink, through the running chain, with sox reading what an app
-would read:
-
-| Mic | Peak amplitude at the sink |
-|---|---|
-| live | 0.000639 (a quiet room, through the gate) |
-| muted | **0.000000** — every sample zero |
-
-The write reaches a capture that is already open, so sox never has to be
-restarted around it, and it costs the same 46 ms the `SwitchAudioSource` call
-did (45.5 vs 45.8 ms, 20 writes each).
-
-Two things it gains on the way past, both of which used to be listed here as
-limitations:
-
-- **The state reads back.** The flag on the default input was write-only from
-  the shell, so `micctl status` could only report the last state set here. The
-  mic's flag is readable, so `status` reads the device, `toggle` resolves
-  against the device rather than against a record that can drift, and nothing
-  has to be inferred. `coreaudio-ctl mute set <device> toggle` does the
-  read-and-flip in one process so the keypress pays for one round trip, not two.
-- **The hardware mic no longer stays live.** An app pointed straight at the G6
-  rather than at the sink is now muted too. `SwitchAudioSource` could never
-  reach that: its `-m` ignores `-s` and only ever acts on the current default
-  input, which is why `coreaudio-ctl` grew a `mute` group that takes a device
-  by name.
-
-And two things it costs:
-
-- **It has to be re-asserted.** The mic's mute flag is a USB-audio-class
-  control, so it is volatile exactly like the input source and the sidetone: a
-  re-enumeration clears it and you are live again with the lamp still red. The
-  chain supervisor therefore re-asserts the wanted state from
-  `~/.local/state/audio/muted` on every poll — but only on a disagreement that
-  is still there a poll later, because a keypress writes the device and the
-  state file a few hundred milliseconds apart and catching that half-finished
-  would undo the keypress. That is not hypothetical: it happened once in
-  testing, logged as `'Sound BlasterX G6' is muted while mute is live`.
-  Measured: a flag cleared behind micctl's back comes back after two polls,
-  about 6 s. The same assertion is why undocking cannot leave you live — it
-  follows the chain onto the built-in mic.
-- **A stale flag on the sink is now a silent failure mode.** Nothing here sets
-  it any more, so one that *is* set — left by the older version of this module,
-  or by some app — means every app gets silence however healthy the mic looks.
-  So `micctl status` reports it under `sink flag`, and both `micctl mute off`
-  and the chain supervisor clear it when they see it.
-
-A mic with no mute control of its own falls back to **taking its input gain to
-zero**, which is the same silence and the same invisibility — measured at the
-sink, 0.000613 at the G6's own gain of 0.65 and exactly 0.000000 at zero. It is
-the fallback rather than the mechanism because the level has to be remembered
-across the mute. Every input measured here has a settable mute flag: the G6, the
-built-in mic, and a C920 webcam all report one on the master element.
-
-### What Option+B costs
-
-Karabiner intercepts at the HID level, so Option+B never reaches the focused
-app, and Alacritty has `option_as_alt = "Both"`:
-
-- **Alt+B is gone in the shell.** It was `backward-word`. The same command is
-  still on **Ctrl+Left** (`^[[1;5D`), which is reachable on the built-in
-  keyboard because `devices/builtin-keyboard.json` puts Ctrl in the corner.
-- **Option+Shift+B was already gone**, claimed by the browser rule in
-  `karabiner/rules/launchers.json`, so `^[B` → `backward-word` was lost before
-  this module existed.
-- Option+B no longer types **∫**.
-
-Nothing else in the stack wants it: nvim has no `<M-b>`, tmux has no Alt
-bindings, `herdr/config.toml` uses Alt only with Enter, Esc, the digits and the
-arrows, and OmniWM's roster has no Option+B.
-
-## The gate
-
-It is an **expander**, not a gate, and that distinction is the whole reason it
-sounds like a room rather than a switch.
-
-SoX has no `gate` effect, and `sox(1)`'s `compand` documentation offers one:
-map everything below the threshold to `-inf`. That was the first version here
-and it was wrong. It measures perfectly — tones at −60 through −44 dBFS came out
-as digital silence, −40 and above untouched to within 0.01 dB — and it sounds
-uncanny, because absolute silence alternating with room tone makes the ear
-track the switching instead of ignoring the noise. Every real-world gate, in
-EasyEffects or VoiceMeeter, attenuates by a finite amount along a sloped curve.
-
-So the transfer function has three points: a floor where attenuation has
-levelled off, the bottom of a transition window, and unity at the threshold.
-The segment below the window runs parallel to unity, which is what holds the
-attenuation constant down there instead of letting it run away to silence.
-
-```
-compand 0.02,0.35 6:-90,-115,-52,-77,-40,-40 0 -90 0
-```
-
-Measured, with the defaults:
-
-| Input | Output | Change |
-|-------|--------|--------|
-| −75 … −60 dBFS | floor | **−25 dB**, constant |
-| −55 | −82.6 | −24.6 dB |
-| −50 | −74.2 | −21.2 dB |
-| −46 | −63.2 | −14.2 dB |
-| −43 | −54.0 | −8.0 dB |
-| −40 | −46.5 | −3.5 dB |
-| −37 | −41.2 | −1.1 dB |
-| −33 and above | unchanged | **0.0 dB** |
-
-Nothing is ever switched off, and speech is bit-for-bit untouched. The ramp is
-continuous across 12 dB with a 6 dB knee rounding both corners.
-
-**The threshold is peak, not RMS**, because the expander acts on the envelope.
-That is why `micctl levels` reports window peaks.
-
-| Setting | Default | |
-|---------|---------|-|
-| `GATE_THRESHOLD` | `-40` | dBFS peak where the curve reaches unity. |
-| `GATE_RANGE` | `25` | How far down quiet material is pushed, in dB. This is the knob for "too much noise" vs "sounds gated"; it is not infinite on purpose. |
-| `GATE_WIDTH` | `12` | dB over which the ramp runs. Wider is smoother and lets more noise through near the top. |
-| `GATE_KNEE` | `6` | Rounds both corners so the ends of the ramp are not audible as events. |
-| `GATE_ATTACK` | `0.02` | Fast, so a word's first consonant survives. |
-| `GATE_DECAY` | `0.35` | Slow, so it eases out across the gaps between words rather than chattering. |
-| `GATE_DELAY` | `0` | A predictive window costs its own length in latency and, measured, buys nothing: `0.02` and `0` gate identically and a burst keeps its onset to within 0.01 dB. |
-| `MIC_GAIN` | `0` | Makeup gain in dB, applied **after** the gate, so a threshold from `micctl levels` stays correct whatever the gain is. |
-| `GATE_RANGE=inf` | — | Restores the `sox(1)` hard gate. Kept because it is what the manual documents, not because it sounds good. |
-
-### Tuning it
-
-```bash
-micctl levels          # sit still for five seconds
-```
-
-It takes the peak of each 0.25 s window and reports the median, p90 and max,
-then suggests p90 + 10 dB. Ten rather than five because the threshold is where
-the curve reaches *unity* and the ramp runs `GATE_WIDTH` below it, so the floor
-wants to sit inside that ramp rather than right at the top of it. The whole-recording peak is useless here: a single
-keyboard clack, or the mute confirmation sound leaking back in through the
-speakers, sets it 30 dB too high. That happened while this was being written,
-which is why the percentile is there.
-
-The desk mic (Sound BlasterX G6) measures window peaks with a median of −55.4
-and a p90 of −49.6 dBFS. Unity at −40 therefore puts the room floor around 20 dB
-down while leaving speech untouched.
-
-## The sidetone
-
-Hearing yourself is the **card's own analog monitoring** — `playthru` in
-CoreAudio's terms, which macOS shows under System Settings > Sound. The signal is
-tapped inside the G6 ahead of the ADC and mixed straight back into the headphone
-output, so it never reaches the host at all.
-
-```bash
-MIC_SIDETONE="on"       # local.conf
-MIC_SIDETONE_DB=6
-```
-
-Two consequences, both load-bearing:
-
-**Zero latency.** Nothing buffers it, because nothing in software touches it.
-
-**It carries no gate.** The tap is ahead of everything the host does, so what you
-hear is the raw mic, not what Meet or Slack receive. If the gate ever clamps your
-speech, the sidetone will not tell you. That is an accepted trade here rather than
-an oversight: Meet and Slack both gate on their own side, and the gate below is
-set loose enough to only take out static, so the far end hearing *less* than the
-sidetone is the unlikely direction. The deciding factor was that zero latency
-beat hearing the gate.
-
-**So mute has to switch it explicitly.** The mute flag acts on the capture
-stream the host receives, and the sidetone is an analog tap taken ahead of it,
-so `micctl mute` switches the sidetone and repaints the lamp as well as setting
-the flag rather than assuming one reaches the other. See [Mute](#mute).
-
-### It resets, and the other machine wants the opposite
-
-`playthru` is a USB-audio-class control, which means volatile: the device resets
-it on every re-enumeration, and handing the card across the USB switch is a
-re-enumeration. On top of that the desk machine wants it **off** — it monitors
-through a PipeWire loopback so it can hear its EasyEffects gate, and running both
-at once comb-filters the voice into something thin and echoey.
-
-So neither machine may assume anything about it, and both assert what they want
-when the card arrives:
-
-| | asserts | where |
+| Caller | Bar | Why |
 |---|---|---|
-| This Mac | sidetone **on**, lamp white, mic unmuted | `dockctl` on the transition into docked |
-| Desk machine | sidetone **off**, lamp white | `g6-mic-guard` on the absent→present edge |
+| `micctl mute` (Option+B) | attached **and** answering | A keypress has to act. It can happen at any moment, and nothing polls any more, so an isolated check always lands more than `MIC_SETTLE_GAP` after the last one and would restart the settle window — gating the keypress on it would mean the lamp never changed at all. |
+| `dockctl` on docking | attached, answering **and** settled for `MIC_SETTLE_SECONDS` | An arrival is exactly the dangerous moment, and dockctl is the only caller that actually watches one: it polls `micctl ready` every five seconds while an assertion is armed, so the window can be satisfied. |
 
-`dockctl` only does it on the *transition*, not every poll — asserting it on a
-five-second timer would fight the mute key and unmute you a moment after you
-pressed it.
+Two things keep the HID traffic down to the edges. `~/.local/state/audio/lamp`
+records the colour last painted and a repeat is skipped, because a no-op paint
+is still a firmware write. And the record is cleared when the card leaves, since
+it comes back carrying whatever the other machine left on it — which is the one
+repaint actually needed.
 
-### A software relay was tried first, and lost
+The record is written **before** the attempt, not after a success. Recording
+success would mean a CLI that fails gets retried by every caller that comes
+along; one attempt per colour per arrival is the whole budget.
 
-Monitoring used to be a second sox pipeline reading the sink and writing to the
-headphones, which did carry the gate. It is in the history if the trade ever needs
-revisiting, along with why it was dropped:
+The lamp does not read back, so `micctl status` shows `painted` as a record of
+the last write rather than a reading. `configured` and `painted` come apart
+whenever the card has been away, which is worth being able to see.
 
-* **It wedged.** sox stays alive when CoreAudio reconfigures under it, relays
-  nothing, and floods `unhandled buffer overrun. Data discarded.` at ~28KB/s.
-  Measured against the card's own `What U Hear` loopback: a tone reached the
-  output at −12 dBFS played directly, −12 dBFS through a fresh relay, and
-  **−90.31 dBFS** through one that had been up 23 minutes. It also ignored
-  SIGTERM and needed SIGKILL, so the supervisor's own restart could not clear it.
-* **Latency**, which is the thing the analog tap gets right for free.
-* The stall detector that came out of it is still in `supervise`, because the
-  chain can wedge the same way. A working pipeline logs zero overruns, so the
-  threshold is not delicate.
+`--lighting-rgb` emits only the lighting trio — verified with `--dry-run
+--debug`, which showed those three frames and nothing else — so the
+CrystalVoice DSP, deliberately off in this card's firmware because it made the
+mic sound like a phone, is not disturbed.
 
+## The warm-up gate
 
-## The input source resets itself
-
-A card with several physical inputs behind one USB interface exposes which one it
-is listening on as a CoreAudio *data source* — macOS shows it under System
-Settings > Sound > Input. The G6 has four:
-
-```
-  Line In
-* External Mic      <- the front jack the PC38X mic plugs into
-  S/PDIF In
-  What U Hear       <- a loopback of system output, not a microphone
-```
-
-That selection is a **USB-audio-class control, so it is volatile**: it resets to
-the device's default on every re-enumeration. Handing the card to another machine
-over the USB switch and taking it back is a re-enumeration, and it comes back on
-**Line In** — a jack with nothing in it. The chain then records a flat −90 dBFS,
-one bit, and relays it faithfully. Everything reports healthy, because everything
-*is* healthy: the device is attached, unmuted, at volume, the agents are up. It
-is simply listening to the wrong hole.
-
-The Linux side has the same problem for a different reason — PipeWire's generic
-profile re-asserts `PCM Capture Source` = Line In every time it configures the
-card — and solves it with a guard that watches mixer events (`g6-mic-guard`).
-
-Here, `MIC_INPUT_SOURCE` in `local.conf` does it:
-
-```bash
-MIC_INPUT_SOURCE="External Mic"
-```
-
-The chain supervisor re-asserts it whenever it has drifted, and `micctl status`
-shows what the device is on, flags a source that cannot carry a mic, and lists
-the alternatives:
-
-```
-  mic            Sound BlasterX G6
-  input source   Line In  [NOT A MIC -- records silence]  (pinned to 'External Mic')
-                 * Line In
-                   External Mic
-                   ...
-```
-
-It has to be **polled, not set once at startup**. Setting it before the chain
-opens the device does not survive: CoreAudio re-asserts its own idea of the
-source when it configures the device for capture. Measured — the write returns
-`noErr`, reads back correct, and is `Line In` again 400 ms later. Asserted from
-the poll loop once sox is up it holds, and the change reaches the running
-capture, so sox does not need restarting around it.
-
-macOS ships no CLI that can set a data source (`SwitchAudioSource` does devices
-and the default input's mute flag, `system_profiler` can only read it), so
-`install.sh` builds `src/coreaudio-ctl.c` to
-`~/.local/libexec/micctl-coreaudio` — one clang call, two system frameworks, no
-third-party dependency. Without it `status` still
-reports the wrong input, it just cannot correct it.
-
-**The CrystalVoice fixes are not affected by any of this.** Those are HID
-settings and they persist in the device's own firmware, so they carry to any
-host — see `~/personal/sound-blasterx-g6-linux.md` on the desk machine. Only the
-audio-class controls (source selection, mixer volumes, sidetone) are volatile.
-
-## The card is not ready when it appears
-
-A USB sound card arriving across a switch is **listed by CoreAudio before it
-will accept a write**, and a write landing in that window is how the docking on
-2026-10-08 went wrong. `dock-watch.log`:
+A card arriving across a USB switch is **listed by CoreAudio before it will
+accept a write**, and writing inside that window is how one docking went wrong:
 
 ```
 applying: docked
   microphone: could not reach it (could not mute 'Sound BlasterX G6')
 ```
 
-The mic assertion fires on the *keyboard* appearing, because the keyboard is
-what tells this Mac it is docked — and the card is a separate device behind the
-same switch, so the keyboard being up only means the card is on its way. The
-chain log from the same minute shows what it was doing instead of coming up:
+The dock state changes when the desk **keyboard** appears, because the keyboard
+is what tells the Mac it is docked. The card is a separate device behind the
+same switch, so the keyboard being up means the card is on its way — never that
+it is ready. `micctl` had already resolved the device and the write to it still
+failed, so "attached" and "writable" are two states with a gap between them.
 
-```
-12:43:26 micctl[chain]: device changed, restarting
-12:43:29 micctl[chain]: starting on 'MacBook Pro Microphone'
-12:43:36 micctl[chain]: device changed, restarting
-12:43:39 micctl[chain]: starting on 'MacBook Pro Microphone'
-12:43:46 micctl[chain]: device changed, restarting
-...
-```
-
-`device changed` is the G6 appearing; `starting on 'MacBook Pro Microphone'`
-three seconds later is it having gone again. So it was **visible for under three
-seconds at a time, on a ten-second cycle, four cycles running** — the restart
-loop, with the click and the lamp dropping out that go with a card
-re-enumerating. The chain was riding every cycle of it, killing sox and starting
-a new one each time.
-
-### What "ready" means
-
-`micctl ready` exits 0 when the pinned device passes three tests, each strictly
-stronger than the one before:
+`micctl ready` is the gate:
 
 | | |
 |---|---|
-| attached | CoreAudio lists it as an input at all — `SwitchAudioSource -a`. |
-| answering | it returns its own mute flag through `coreaudio-ctl`. Being listed is not the same as being usable, and that gap is the whole bug: the write that failed went to a device the attachment test had already accepted. |
-| settled | both of the above have held **at every check** for `MIC_SETTLE_SECONDS`, which is what a card stuck re-enumerating can never manage. |
+| attached | CoreAudio lists it as an input at all. |
+| answering | it returns its own mute flag. Being listed is not being usable, and that gap is the bug. |
+| settled | both have held **at every check** for `MIC_SETTLE_SECONDS`. |
 
-The USB tree was considered as a fourth test and left out. `ioreg -p IOUSB` sees
+`MIC_SETTLE_SECONDS` is **12**, and the figure comes off the log rather than out
+of taste. While the card was cycling it was visible for under three seconds at a
+time on a ten-second period, so a window shorter than that period could be
+satisfied inside a single appearance of a card that is still restarting — the
+one case it exists to catch. The window has to beat the period, not merely feel
+generous.
+
+Nothing watches continuously, so "held at every check" also means no two checks
+further apart than `MIC_SETTLE_GAP` (15 s). Without that, a stamp left by a
+docking an hour ago would read as a settled card the instant this one came back.
+
+The USB tree was considered as a fourth test and left out: `ioreg -p IOUSB` sees
 the device node *before* CoreAudio publishes it, so as a gate it is the weaker
-of the two signals and adds nothing on top; the one write that does not go
-through CoreAudio is the lamp, over HID, and that one is best-effort already.
+of the two signals and adds nothing on top.
 
-`MIC_SETTLE_SECONDS` is **12**, and the figure comes from the log rather than
-from taste. A settle window *shorter* than the re-enumeration period can be
-satisfied inside a single appearance of a card that is cycling — which is the
-one case it exists to catch — so it has to beat the measured ten seconds rather
-than merely feel generous. Nothing watches the card continuously either (the
-chain checks every 2 s, `dockctl` every 5 s), so "held at every check" also
-means no two checks further apart than `MIC_SETTLE_GAP`, 15 s; without that, a
-stamp left by a docking an hour ago would read as a settled card the instant
-this one came back.
+`dockctl` **arms** rather than asserts. The transition into docked records that
+an assertion is wanted, tries once in case a short undock left the card up, and
+otherwise writes nothing; every poll after it asks `micctl ready` and runs
+`micctl claim` on the first poll that says yes. The five-second loop is the
+retry, so nothing sleeps inside an apply where it would stall the workspace
+reconcile that shares it. Observed working through a bad handover:
 
-### What waits, and what does not
+```
+microphone: waiting for the card to settle before asserting it
+microphone: unmuted, lamp white, sidetone on (139s after docking)
+```
 
-**`dockctl` arms rather than asserts.** The transition into docked records that
-an assertion is wanted and writes nothing; every poll after it asks `micctl
-ready` and does the work on the first poll that says yes. The five-second poll
-loop *is* the retry, so there is no sleep inside an apply — which would stall
-the workspace reconcile that shares it — and no fixed delay to guess. A card
-that is still restarting simply never reads as settled and never gets written
-to. After `MIC_APPLY_DEADLINE` (300 s) it gives up and says so, because an armed
-assertion that waits for ever is one that fires at a baffling moment three hours
-later.
+139 seconds of the card cycling, nothing written for any of it, and the
+assertion landing on the first poll after it settled. `MIC_APPLY_DEADLINE`
+(300 s) stops an armed assertion firing at a baffling moment three hours later.
 
-**The chain waits by resolving elsewhere.** An unsettled pinned device reads to
-`resolve_mic` exactly like an absent one, so the chain stays on
-`MIC_FALLBACK` and switches across once, when the card is actually up, instead
-of following it through every cycle of a restart loop.
+## Two input settings this deliberately leaves alone
 
-**Option+B does not wait.** A keypress has to act. A card mid-restart is a worse
-reason to swallow a mute than it is to delay an assertion nobody asked for, so
-`micctl mute` writes to the pinned device whatever the gate says.
+Both are **off by default**, and both were on before BlackHole went. The reason
+is the same for each: they existed to work around something the chain itself
+caused, and with the chain gone macOS appears to get them right unaided. Rather
+than keep a workaround for a problem that may no longer exist, they are
+unplugged and the mechanism is left behind one variable each.
 
-Nothing here is silent about the wait:
+### `MIC_ASSERT_INPUT_SOURCE` — the card's physical input
+
+The G6 has four inputs behind one USB interface, exposed as a CoreAudio *data
+source*:
+
+```
+  Line In
+* External Mic      <- the front jack the headset mic plugs into
+  S/PDIF In
+  What U Hear       <- a loopback of system output, not a microphone
+```
+
+It is volatile, and the card comes back from a re-enumeration parked on **Line
+In** — a jack with nothing in it — so every app records a flat −90 dBFS and
+relays it faithfully. Everything reports healthy, because everything *is*
+healthy. It is simply listening to the wrong hole.
+
+This used to have to be **polled**, and that turns out to have been our own
+fault. Setting it before the chain opened the device did not survive: CoreAudio
+re-asserted its own idea of the source when it configured the device **for
+capture** — measured as correct on read-back and back to `Line In` 400 ms later.
+With nothing here capturing, the selection holds. Sampled once a second over six
+seconds with the chain stopped: `External Mic` throughout.
+
+If an app opening the card for capture ever knocks it back, that is the case
+this cannot cover, and `micctl status` flags it:
+
+```
+  input source   Line In  [NOT A MIC -- records silence]
+```
+
+### `MIC_CLAIM_DEFAULT_INPUT` — which device apps get
+
+macOS re-picks the default input when a device appears, and it used to pick the
+card directly — quietly taking the chain and its gate out of the path. Apps
+still got a working microphone, just the raw one, so nothing looked wrong until
+you were in a meeting. That is what this was for.
+
+With no virtual device competing, the card being picked **is** the wanted
+outcome, so there is nothing to correct. Turn it on if macOS starts picking
+something else.
+
+## Status
 
 ```bash
-micctl ready        # exit 0 and "ready", or the reason it is not
-micctl status       # a `warm-up` line under Chain, with the elapsed figure
-dockctl status      # says when an assertion is armed, and what it is waiting on
+micctl status
+micctl ready        # exit 0 once the card can be written to
+micctl claim        # assert what a just-arrived card forgets
 ```
 
 ```
-  mic            MacBook Pro Microphone
-  warm-up        'Sound BlasterX G6' is still settling after a re-enumeration -- nothing is written to it until that clears
-```
+Mute
+  state          live
+  applied to     Sound BlasterX G6  (capture side, where no app can see it)
 
-A machine with no pinned `MIC_DEVICE` skips all of this: there is no card being
-handed across a switch, so there is nothing to wait for.
+Microphone
+  device         Sound BlasterX G6
+  warm-up        settled 15s ago
+  input source   External Mic  (not managed)
+  default input  Sound BlasterX G6  (macOS picks this)
+
+Sidetone
+  device         on
+  wanted         on at 6 dB, following mute
+  output         Sound BlasterX G6
+
+Lamp
+  configured     live '255 255 255', muted '255 0 0'
+  painted        255 255 255
+```
 
 ## Troubleshooting
 
-```bash
-micctl status                                   # devices, gate, agent health
-micctl ready                                    # is the card up enough to write to
-tail -f ~/.local/state/audio/mic-chain.log      # the chain says why it is waiting
-```
-
 | Symptom | Cause |
 |---------|-------|
-| Apps get silence | The chain is not running, or BlackHole is installed but the machine has not been restarted. `micctl status` says which. |
-| An app says your microphone is muted when you muted it deliberately | Not from here: mute never touches the device apps hold. Something has set the mute flag on BlackHole itself — `micctl status` shows it under `sink flag`, and `micctl mute off` or the chain supervisor clears it. |
-| The lamp is wrong for 10-15 s after docking | Expected: nothing is written to the card until it has been attached and answering for `MIC_SETTLE_SECONDS`. `micctl status` shows the countdown under `warm-up`. |
-| The lamp never goes white after docking, and `dockctl status` says an assertion is armed | The card is not settling. `micctl ready` says which test it is failing — `not attached` means the switch did not hand it over, `still settling` means it is re-enumerating in a loop. |
-| `dock-watch.log` says `microphone: gave up after 300s` | The card never arrived. It stayed with the desk machine, or the USB switch did not hand it over; `micctl ready` says which. |
-| The lamp is red but people can hear you | The mic's mute flag is volatile, so a re-enumeration clears it. The chain re-asserts it after two polls, about 6 s; if it does not, the chain is not running. `micctl status`. |
-| Chain log says "waiting: BlackHole 2ch is not installed" | Restart the machine, or the cask never installed. |
-| No sidetone | `micctl status` prints it under `Sidetone / device`. It is volatile and the desk machine turns it off, so after a USB switch it needs asserting: `micctl sidetone on`, or just re-dock. |
-| Mic indicator always on | Expected: the chain holds the mic open permanently. That is the cost of a gate that applies to outgoing audio. |
-| Log fills with sox's usage text and `missing filename` | sox format options (`-r`, `-c`) must come *before* the device they describe. Put them after and sox reads the device as the output, then finds options with no file left. The supervisor backs off on immediate failures so the real error stays readable. |
-| Sink is silent while the mic clearly works | Expected when nobody is talking: that is the gate holding shut. Measure with `micctl levels`, or speak while capturing. |
-| Chain runs but everything is silent | sox may be missing Microphone permission under launchd, which is a different responsible process from your terminal. Check System Settings → Privacy & Security → Microphone. |
-| Gate cuts off quiet speech | Lower `GATE_THRESHOLD`, or widen `GATE_WIDTH`. |
-| It sounds like a gate switching on and off | Reduce `GATE_RANGE` (less attenuation), widen `GATE_WIDTH`, or raise `GATE_DECAY`. Check `GATE_RANGE` is not set to `inf`. |
-| Too much background still audible | Raise `GATE_RANGE`, or raise `GATE_THRESHOLD` so more of the floor falls inside the ramp. |
+| Apps get silence | Check `input source` in `micctl status`. A card parked on `Line In` records an empty jack, and that is the one failure where every other indicator stays green. |
+| An app says your microphone is muted when you muted it deliberately | Not from here: the flag is on the capture side, where no app can read it. Something else set a mute flag on the device the app holds. |
+| The lamp did not change on Option+B | The mute still happened — only the lamp is gated. `micctl status` says why under `warm-up`: `not attached` means the card is on the other machine, `not answering` means it is mid-enumeration. It catches up on the next press. |
+| The lamp is wrong after docking | `dockctl status` says whether an assertion is still armed and what it is waiting on. A card that never settles is the open hardware problem, not this. |
+| `dock-watch.log` says `microphone: gave up after 300s` | The card never arrived — it stayed with the desk machine, or the switch did not hand over. `micctl ready` says which. |
+| No sidetone | Volatile, and the desk machine turns it off when it has the card, so after a switch it needs asserting: `micctl mute off`, or just re-dock. |
+| Mic indicator always on | No longer expected — nothing here holds the card open. If it is on, an app is holding it. |
+| `micctl-coreaudio is missing` | `./install.sh audio`. Needs the Xcode command line tools for `clang`. |
+| I want the gate back | It is in the git history, before `refactor(audio): drop the chain`. Note what it costs: a capture stream on the card within a second of every arrival. |
+
+## The desk machine does the same job differently
+
+`omarchy/` has `g6-mic-guard` for the Linux side, and it is worth reading
+against this one. PipeWire's generic profile re-asserts `PCM Capture Source` =
+Line In every time it configures the card, so over there the input source
+genuinely does have to be watched — it polls `alsactl monitor` and puts it back.
+
+The part worth copying is how it paints the lamp: **once, on the absent →
+present edge of its own loop**, and that edge is only reachable after
+`find_card` has seen the card registered with ALSA. Nothing there can paint a
+card mid-arrival, structurally, without any readiness check at all. There is no
+poll loop left here to hang that on, so this side checks explicitly instead.
+
+It also holds the card's analog sidetone **off**, because it monitors in
+software and two sidetones at once is the comb filter. That is the one setting
+the two machines actively disagree about.
