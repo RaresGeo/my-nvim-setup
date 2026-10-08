@@ -67,20 +67,37 @@ display signature.
 scripts read rather than parsing `status`.
 
 Docking also takes the desk microphone back. The Sound BlasterX G6 rides the same
-USB switch as the keyboard, so the keyboard arriving means the card arrived too —
-and the desk machine wants the opposite settings from this one, because it
-monitors in software and therefore switches the card's analog sidetone off while
-it holds it. Those are USB-audio-class controls, so they are volatile and reset on
-every re-enumeration; crossing the switch is one. Nothing can be assumed, so on
-the transition into docked `dockctl` asserts a known state through `micctl`:
+USB switch as the keyboard — and the desk machine wants the opposite settings
+from this one, because it monitors in software and therefore switches the card's
+analog sidetone off while it holds it. Those are USB-audio-class controls, so
+they are volatile and reset on every re-enumeration; crossing the switch is one.
+Nothing can be assumed, so docking asserts a known state through `micctl`:
 **unmuted, lamp white, sidetone on**.
 
-Starting from unmuted matters because the mute flag is write-only — a mute left
-over from before the handover would be invisible until you noticed nobody could
-hear you. Set `MIC_APPLY=0` to leave the microphone alone.
+Starting from unmuted matters because a mute left over from before the handover
+is invisible *by design* — `micctl` mutes the microphone rather than the sink
+precisely so that no app can see it — and the lamp, which is the only indicator
+there is, is on the card that just came back from the other machine. Set
+`MIC_APPLY=0` to leave the microphone alone.
 
 Only on the transition, not every poll: asserting it on a five-second timer would
 fight the mute key and unmute you a moment after you pressed it.
+
+**But not at the moment of the transition.** The keyboard arriving does not mean
+the card arrived — it is a separate device behind the same switch, and it is
+listed by CoreAudio before it will accept a write. Asserting immediately is what
+the 2026-10-08 docking cost: `microphone: could not reach it (could not mute
+'Sound BlasterX G6')` in the dock log, and in the chain log the card appearing
+and vanishing on a ten-second cycle, four cycles running, with the click and the
+lamp dropping out that go with a card re-enumerating.
+
+So the transition only **arms** the assertion. Every poll after it asks `micctl
+ready` — attached, answering, and unchanged for twelve seconds — and does the
+work on the first poll that says yes, giving up after `MIC_APPLY_DEADLINE`
+(300 s). The five-second loop is the retry, so nothing sleeps inside an apply
+where it would stall the workspace reconcile, and a card still restarting simply
+never reads as settled. `dockctl status` says when an assertion is armed and what
+it is waiting on; `audio/README.md` has where the twelve seconds comes from.
 
 The flip side: moving a workspace to another display by hand gets undone within
 five seconds. That is what owning placement means — set `DOCK_MOVE_WORKSPACES=0`
@@ -108,7 +125,7 @@ Two things this deliberately does **not** do, both decided by measuring:
 | The ultrawide's input | This Mac cannot speak DDC to the Dell at all — every read fails at the I2C level, because the link is USB-C (DP Alt Mode) to HDMI and that active conversion does not carry the DDC sideband. The desktop can, in both directions, so it owns the handover from its side. For the record, the panel's VCP `0x60` values are dp1=`0x0f`, hdmi1=`0x11`, hdmi2=`0x12`; this Mac is on HDMI-1. |
 
 ```bash
-dockctl status      # detected state, and what is currently applied
+dockctl status      # detected state, what is applied, any armed mic assertion
 dockctl probe       # what the detector sees -- run this at the desk
 dockctl apply       # apply if the state changed (what the agent runs)
 dockctl dock        # force a state, ignoring the hardware
