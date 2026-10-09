@@ -1,5 +1,4 @@
 appRules = []
-monitorBarOverrides = []
 monitorDwindleOverrides = []
 monitorGapOverrides = []
 monitorNiriOverrides = []
@@ -951,6 +950,12 @@ id = "toggleOverview"
 [[hotkeys]]
 binding = "Unassigned"
 id = "toggleSystemStats"
+
+[[monitorBarOverrides]]
+id = "7A1F0C2E-9B4D-4E61-A3C8-5D2F6B8E1049"
+monitorDisplayUUID = "BB1AD357-346B-440B-B325-BBDA76A066EC"
+monitorName = "DELL S3422DWG"
+reserveLayoutSpace = false
 
 [[workspaces]]
 id = "AD36F001-C57E-41A5-AC1D-DF5249D007F0"
