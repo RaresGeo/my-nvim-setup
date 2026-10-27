@@ -31,6 +31,10 @@ Off the top of my head, below are listed some of the dependencies you will need 
 - **sbt** - simple build tool for scala projects
 - **Deno** - If working with Deno projects
 
+### Optional
+
+- **GitHub CLI** (`gh`), logged in with `gh auth login` - needed by `:Octo` for pull request review (octo.nvim). Nothing else uses it.
+
 I installed most of these using `homebrew`
 
 ## Plugin Manager
@@ -57,6 +61,12 @@ After each update, it will open a floating window with some commands. You can fo
 - **Go** support (gopls)
 - Auto-completion with **blink.cmp** and **emmet-ls**
 - Auto-pairs with **nvim-autopairs**
+
+### 🔀 **Git & Code Review**
+
+- **diffview.nvim** for side-by-side diffs and file history
+- **git-conflict.nvim** for resolving merge conflicts
+- **octo.nvim** for reviewing GitHub pull requests in Neovim: the changed-files panel, viewed marks, inline comments and review submission
 
 ### ✨ **Developer Experience**
 
@@ -131,6 +141,51 @@ After each update, it will open a floating window with some commands. You can fo
 | `<leader>mr` | Reveal in Metals tree     |
 | `<leader>mw` | Metals worksheet commands |
 
+### Git
+
+| Keymap              | Action                                   |
+| ------------------- | ---------------------------------------- |
+| `<leader>dv`        | Diff view of unstaged changes (Diffview) |
+| `<leader>dh`        | File history of current file (Diffview)  |
+| `<leader>dq`        | Close diff view                          |
+| `]x` / `[x`         | Next / previous conflict                 |
+| `<leader>gco`       | Choose ours (current branch)             |
+| `<leader>gct`       | Choose theirs (incoming branch)          |
+| `<leader>gcb`       | Choose both                              |
+| `<leader>gc0`       | Choose none                              |
+| `<leader>gcl`       | List conflicts (Telescope)               |
+
+### Pull Requests (octo.nvim)
+
+Octo commands, run from inside Neovim. Pick a PR from the list, or let it find
+the one for the branch you are on.
+
+| Command                | Action                                 |
+| ---------------------- | -------------------------------------- |
+| `:Octo pr list`        | Browse open pull requests (Telescope)  |
+| `:Octo <PR URL>`       | Open a pull request by URL             |
+| `:Octo review start`   | Start a review of the current PR       |
+| `:Octo review resume`  | Resume a pending review                |
+| `:Octo review submit`  | Submit the pending review              |
+| `:Octo review discard` | Discard the pending review             |
+
+Inside a review tab:
+
+| Keymap                   | Action                              |
+| ------------------------ | ----------------------------------- |
+| `]q` / `[q`             | Next / previous changed file        |
+| `]u` / `[u`             | Next / previous unviewed file       |
+| `<localleader><Space>`   | Toggle the viewed state of the file |
+| `<localleader>e`         | Move focus to the file panel        |
+| `<localleader>b`         | Hide / show the file panel          |
+| `<localleader>ca`        | Add a review comment                |
+| `<localleader>vs`        | Submit the review                   |
+| `<localleader>vd`        | Discard the review                  |
+| `<C-c>`                  | Close the review tab                |
+
+`<localleader>` is `\`. Octo's buffer mappings are local to its own buffers,
+so they do not change `]q`, `[q` or the rest elsewhere.
+
 ## Plugin List
 
 ### Core Functionality
@@ -149,6 +204,12 @@ After each update, it will open a floating window with some commands. You can fo
 - **telescope.nvim** - Fuzzy finder and picker
 - **oil.nvim** - File explorer
 - **harpoon** - Quick file navigation
+
+### Git & Code Review
+
+- **diffview.nvim** - Diff view and file history
+- **git-conflict.nvim** - Merge conflict resolution
+- **octo.nvim** - GitHub pull requests and review
 
 ## Language Server Setup
 
