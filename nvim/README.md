@@ -137,10 +137,11 @@ After each update, it will open a floating window with some commands. You can fo
 
 ### Pull Request Review
 
-| Command            | Action                                             |
-| ------------------ | -------------------------------------------------- |
-| `:DiffPR`          | Diff the open PR for the current branch (Diffview) |
-| `:DiffPR <number>` | Diff that open PR, whatever branch you are on      |
+| Command                   | Action                                             |
+| ------------------------- | -------------------------------------------------- |
+| `:DiffPR`                 | Diff the open PR for the current branch (Diffview) |
+| `:DiffPR <number>`        | Diff that open PR, whatever branch you are on      |
+| `:DiffPR <PR URL>`        | Same, from a `github.com/<owner>/<repo>/pull/<n>` URL |
 
 `:DiffPR` uses `gh` to find the open PR whose head is the current branch, then
 opens `origin/<base>...<head>` in Diffview. The three-dot range shows only what the

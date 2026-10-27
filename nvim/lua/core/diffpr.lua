@@ -1,5 +1,5 @@
--- :DiffPR [number]
--- Opens the open GitHub PR for the current branch (or the PR given by number)
+-- :DiffPR [number | url]
+-- Opens the open GitHub PR for the current branch (or the PR given by number or URL)
 -- in diffview, as `origin/<base>...<head>`: the three-dot range is the PR's own
 -- layer, so a stacked PR shows only what it adds on top of its parent.
 local M = {}
@@ -108,15 +108,40 @@ function M.open(number)
 	end)
 end
 
+-- Turns the argument into a PR number. Accepts a bare number, or a GitHub PR URL
+-- whose number is the segment after `pull`: the last element of a plain
+-- .../pull/37, and still 37 with a trailing /files or ?query. A URL for another
+-- repository is refused, since its number would be looked up in this one.
+local function parse_target(arg)
+	local number = arg:match("^%d+$")
+	if number then
+		return tonumber(number)
+	end
+
+	local owner, repo, pr_number = arg:match("^https?://[^/]+/([^/]+)/([^/]+)/pull/(%d+)")
+	if not pr_number then
+		return nil, "expected a PR number or a GitHub PR URL, got '" .. arg .. "'"
+	end
+
+	local remote = vim.trim(vim.system({ "git", "remote", "get-url", "origin" }, { text = true }):wait().stdout or "")
+	local origin_owner, origin_repo = remote:match("[:/]([^/:]+)/([^/]+)$")
+	origin_repo = origin_repo and origin_repo:gsub("%.git$", "")
+	if not origin_owner or origin_owner:lower() ~= owner:lower() or origin_repo:lower() ~= repo:lower() then
+		return nil, ("PR URL is for %s/%s, but origin is %s/%s"):format(owner, repo, origin_owner or "?", origin_repo or "?")
+	end
+
+	return tonumber(pr_number)
+end
+
 vim.api.nvim_create_user_command("DiffPR", function(opts)
-	local number
+	local number, err
 	if opts.args ~= "" then
-		number = tonumber(opts.args)
+		number, err = parse_target(opts.args)
 		if not number then
-			return fail("expected a PR number, got '" .. opts.args .. "'")
+			return fail(err)
 		end
 	end
 	M.open(number)
-end, { nargs = "?", desc = "Diff the open GitHub PR for this branch (or PR number) in diffview" })
+end, { nargs = "?", desc = "Diff a GitHub PR (number or URL), or the open PR for this branch, in diffview" })
 
 return M
