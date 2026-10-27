@@ -31,6 +31,10 @@ Off the top of my head, below are listed some of the dependencies you will need 
 - **sbt** - simple build tool for scala projects
 - **Deno** - If working with Deno projects
 
+### Optional
+
+- **GitHub CLI** (`gh`), logged in with `gh auth login` - needed by `:DiffPR` to find the PR for a branch. Nothing else uses it.
+
 I installed most of these using `homebrew`
 
 ## Plugin Manager
@@ -130,6 +134,19 @@ After each update, it will open a floating window with some commands. You can fo
 | `<leader>mt` | Toggle Metals tree view   |
 | `<leader>mr` | Reveal in Metals tree     |
 | `<leader>mw` | Metals worksheet commands |
+
+### Pull Request Review
+
+| Command            | Action                                             |
+| ------------------ | -------------------------------------------------- |
+| `:DiffPR`          | Diff the open PR for the current branch (Diffview) |
+| `:DiffPR <number>` | Diff that open PR, whatever branch you are on      |
+
+`:DiffPR` uses `gh` to find the open PR whose head is the current branch, then
+opens `origin/<base>...<head>` in Diffview. The three-dot range shows only what the
+PR adds on top of its base, so a stacked PR shows its own layer. The base is
+always fetched first; if that fails the diff is not opened. If your local HEAD
+is behind the PR, you get a warning and the diff of your local copy.
 
 ## Plugin List
 
