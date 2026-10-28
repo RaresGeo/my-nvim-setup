@@ -6,9 +6,11 @@ local M = {}
 
 local PR_FIELDS = "number,state,title,baseRefName,headRefName,headRefOid,isCrossRepository"
 
--- gh answers, kept for the rest of the Neovim session so a repeat `:DiffPR` does not
--- wait on the network. Keyed by repository, so changing repo never reuses another's PRs.
--- `--fetch` skips the cache and replaces the entry.
+-- Everything this module asks of GitHub or git, kept for the rest of the Neovim
+-- session so a repeat `:DiffPR` opens without waiting: the gh lookups, the base
+-- fetch, and the commit a PR's head was fetched to. Keys start with the repository,
+-- so changing repo never reuses another repo's answers. `--fetch` ignores the cache
+-- and replaces it. Only successes are cached.
 local cache = {}
 
 local function fail(msg)
@@ -24,40 +26,65 @@ local function run(cmd, cb)
 	end)
 end
 
--- Runs a gh command and decodes its JSON. cb(ok, data, from_cache): data is the
--- decoded value on success and stderr on failure. Only successes are cached.
-local function gh(key, cmd, force, cb)
+-- Runs work(done) once per session per key. done(ok, value) stores a success and
+-- calls cb(ok, value, from_cache), with value the result on success and the error on failure.
+local function once(key, force, work, cb)
 	local hit = cache[key]
-	if hit and not force then
+	if hit ~= nil and not force then
 		return vim.schedule(function()
 			cb(true, hit, true)
 		end)
 	end
-	run(cmd, function(ok, out, err)
-		if not ok then
-			return cb(false, err, false)
+	work(function(ok, value)
+		if ok then
+			cache[key] = value
 		end
-		local data = vim.json.decode(out)
-		cache[key] = data
-		cb(true, data, false)
+		cb(ok, value, false)
 	end)
 end
 
--- Fetch what the diff needs and open it: `base` always from origin, and the
--- PR's head from refs/pull/<n>/head unless it is the local branch checked out.
-local function open_range(pr, branch, from_cache)
-	run({ "git", "fetch", "--quiet", "origin", pr.baseRefName }, function(ok, _, err)
+-- A gh command, decoded from JSON.
+local function gh(key, cmd, force, cb)
+	once(key, force, function(done)
+		run(cmd, function(ok, out, err)
+			if not ok then
+				return done(false, err)
+			end
+			done(true, vim.json.decode(out))
+		end)
+	end, cb)
+end
+
+-- Fetch what the diff needs and open it. The base is fetched into origin/<base>, which
+-- stays put for the session. A PR's head is fetched from refs/pull/<n>/head and the
+-- commit recorded, because FETCH_HEAD is overwritten by the next fetch. A local branch
+-- checked out for its PR uses HEAD and needs no fetch of its own.
+local function open_range(pr, branch, repo, force, from_cache)
+	once(repo .. "|base|" .. pr.baseRefName, force, function(done)
+		run({ "git", "fetch", "--quiet", "origin", pr.baseRefName }, function(ok, _, err)
+			done(ok, ok and true or err)
+		end)
+	end, function(ok, err)
 		if not ok then
 			return fail("could not fetch origin/" .. pr.baseRefName .. ", not opening the diff\n" .. err)
 		end
 
 		local local_head = branch == pr.headRefName and not pr.isCrossRepository
 		if not local_head then
-			return run({ "git", "fetch", "--quiet", "origin", "refs/pull/" .. pr.number .. "/head" }, function(fetched, _, ferr)
+			return once(repo .. "|head|" .. pr.number, force, function(done)
+				run({ "git", "fetch", "--quiet", "origin", "refs/pull/" .. pr.number .. "/head" }, function(fetched, _, ferr)
+					if not fetched then
+						return done(false, ferr)
+					end
+					run({ "git", "rev-parse", "FETCH_HEAD" }, function(resolved, sha, rerr)
+						done(resolved, resolved and sha or rerr)
+					end)
+				end)
+			end, function(fetched, sha)
 				if not fetched then
-					return fail("could not fetch PR #" .. pr.number .. "'s head, not opening the diff\n" .. ferr)
+					return fail("could not fetch PR #" .. pr.number .. "'s head, not opening the diff\n" .. sha)
 				end
-				vim.cmd("DiffviewOpen origin/" .. pr.baseRefName .. "...FETCH_HEAD")
+				vim.cmd("DiffviewOpen origin/" .. pr.baseRefName .. "..." .. sha)
 			end)
 		end
 
@@ -114,7 +141,7 @@ function M.open(number, force)
 				if pr.state ~= "OPEN" then
 					return fail("PR #" .. number .. " is " .. pr.state:lower() .. ", only open PRs can be diffed")
 				end
-				open_range(pr, branch, from_cache)
+				open_range(pr, branch, repo, force, from_cache)
 			end)
 		end
 
@@ -130,7 +157,7 @@ function M.open(number, force)
 					return fail("no open PR for branch " .. branch)
 				end
 				pick(prs, branch, function(pr)
-					open_range(pr, branch, from_cache)
+					open_range(pr, branch, repo, force, from_cache)
 				end)
 			end
 		)
@@ -185,6 +212,6 @@ vim.api.nvim_create_user_command("DiffPR", function(opts)
 		end
 	end
 	M.open(number, force)
-end, { nargs = "*", desc = "Diff a GitHub PR (number or URL), or the open PR for this branch, in diffview. --fetch skips the cache." })
+end, { nargs = "*", desc = "Diff a GitHub PR (number or URL), or the open PR for this branch, in diffview. --fetch refetches everything." })
 
 return M

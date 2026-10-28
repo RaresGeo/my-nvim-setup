@@ -142,7 +142,7 @@ After each update, it will open a floating window with some commands. You can fo
 | `:DiffPR`                 | Diff the open PR for the current branch (Diffview)     |
 | `:DiffPR <number>`        | Diff that open PR, whatever branch you are on          |
 | `:DiffPR <PR URL>`        | Same, from a `github.com/<owner>/<repo>/pull/<n>` URL  |
-| `:DiffPR --fetch [...]`   | Ask GitHub again instead of using this session's cache |
+| `:DiffPR --fetch [...]`   | Refetch the PR and its refs instead of using the session's cache |
 
 `:DiffPR` uses `gh` to find the open PR whose head is the current branch, then
 opens `origin/<base>...<head>` in Diffview. The three-dot range shows only what the
@@ -150,10 +150,10 @@ PR adds on top of its base, so a stacked PR shows its own layer. The base is
 always fetched first; if that fails the diff is not opened. If your local HEAD
 is behind the PR, you get a warning and the diff of your local copy.
 
-GitHub's answers are cached for the rest of the Neovim session, so a repeat
-`:DiffPR` skips the `gh` round trip. The cache is per repository. After you push
-or a PR changes, the cached data can be stale, so pass `--fetch` to refresh it.
-The git fetches of the base and head still run every time.
+Everything `:DiffPR` asks GitHub and git for is cached for the rest of the Neovim
+session: the PR lookup, the base fetch, and the head fetch. A repeat opens the
+diff straight away. The cache is per repository. After you push, or a PR's base
+or head changes, the cached data can be stale, so pass `--fetch` to ask again.
 
 ## Plugin List
 
