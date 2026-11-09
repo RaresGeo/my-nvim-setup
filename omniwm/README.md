@@ -146,14 +146,11 @@ cannot create it and only warns when it is missing.
 ### Why this needs a daemon
 
 `scratchpad-pin` is a watcher, because nothing in OmniWM can express "this app
-belongs in a scratchpad". Checked against 0.7.2:
+belongs in a scratchpad". Checked against 0.8.0:
 
 - **`appRules` has no scratchpad action.** It can pin an app to a workspace
-  (`--assign-to-workspace`), set its layout and its initial span, and nothing
-  else — `omniwmctl query rule-actions` is the full list.
-- **The only scratchpad command acts on the focused window.**
-  `omniwmctl command scratchpad assign <slot>` takes no window argument, so
-  the watcher has to focus the window first and put focus back afterwards.
+  (`--assign-to-workspace`), set its layout, initial span and minimum size,
+  and nothing else — `omniwmctl query rule-actions` is the full list.
 - **Membership is never written to disk.** `settings.toml` round-trips
   `[scratchpads]` and `[scratchpads.labels]`, but the members are not in the
   schema and assigning does not rewrite the file at all. Nor does
@@ -179,14 +176,11 @@ closed on purpose, the same way it does not undo an Option+Shift+S. Start it
 again however you like and the resident watcher pins it within a second or
 two; otherwise it is back at the next login.
 
-Two traps, if you extend this:
-
-- **`query windows --scratchpad` is not trustworthy.** It returned an empty
-  list while scratchpad members were plainly present and visible. Read
-  `scratchpadIndex` off `query windows` instead, which is what the script does.
-- **`assign` acts on whatever is focused the moment it runs**, and focus
-  changes are asynchronous. The script polls until the window it asked for is
-  actually focused before firing, or it would pin a bystander.
+One trap, if you extend this: **`omniwmctl window assign-to-scratchpad <id>
+<slot>` is a toggle.** Run it on a window already in that slot and it takes it
+back out, so check `scratchpadIndex` from `query windows` first, as the script
+does. It needs no focus change, unlike `command scratchpad assign`, which only
+acts on the focused window and was all 0.7.x had.
 
 `[scratchpads.labels]` *is* persisted, so slot 1's bar pill is named:
 
