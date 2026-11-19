@@ -100,8 +100,8 @@ directory, so `cd -` in the shell gets you to the file's directory.
 | Keymap       | Action                                          |
 | ------------ | ----------------------------------------------- |
 | `<leader>tt` | Terminal in a new tab                           |
-| `<leader>tv` | Terminal in a full-height split on the right    |
-| `<leader>th` | Terminal in a full-width split along the bottom |
+| `<leader>tv` | Terminal to the right of the current window     |
+| `<leader>th` | Terminal below the current window               |
 | `<leader>ft` | Find terminal buffers (Telescope)               |
 
 ### LSP & Code Navigation

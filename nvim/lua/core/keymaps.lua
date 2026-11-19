@@ -45,10 +45,10 @@ vim.keymap.set("n", "<leader>tt", function()
 end, { desc = "Open terminal in a new tab" })
 vim.keymap.set("n", "<leader>tv", function()
     open_terminal_in_current_dir("vsplit")
-end, { desc = "Open terminal in a split on the right" })
+end, { desc = "Open terminal to the right of the current window" })
 vim.keymap.set("n", "<leader>th", function()
     open_terminal_in_current_dir("split")
-end, { desc = "Open terminal in a split at the bottom" })
+end, { desc = "Open terminal below the current window" })
 
 -- Telescope keymaps
 local builtin = require("telescope.builtin")

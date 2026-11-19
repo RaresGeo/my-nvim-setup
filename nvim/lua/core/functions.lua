@@ -1,10 +1,10 @@
--- Where each placement opens its window. The splits use botright so the
--- terminal spans the whole edge of the tab, to the right of (or below)
--- everything already open, rather than halving just the current window.
+-- Where each placement opens its window. The splits use rightbelow, so they
+-- halve only the focused window, opening on its right (or below it), whatever
+-- the splitright/splitbelow options say.
 local terminal_placements = {
 	tab = "tabnew",
-	vsplit = "botright vnew",
-	split = "botright new",
+	vsplit = "rightbelow vnew",
+	split = "rightbelow new",
 }
 
 -- Next free "Terminal N" number. Looks at every terminal buffer, not one per
