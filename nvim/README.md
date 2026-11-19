@@ -92,6 +92,18 @@ After each update, it will open a floating window with some commands. You can fo
 | `<C-S-P>`   | Previous harpoon file |
 | `<C-S-N>`   | Next harpoon file     |
 
+### Terminals
+
+Each opens in the current file's directory, then `cd -`s back to the working
+directory, so `cd -` in the shell gets you to the file's directory.
+
+| Keymap       | Action                                          |
+| ------------ | ----------------------------------------------- |
+| `<leader>tt` | Terminal in a new tab                           |
+| `<leader>tv` | Terminal in a full-height split on the right    |
+| `<leader>th` | Terminal in a full-width split along the bottom |
+| `<leader>ft` | Find terminal buffers (Telescope)               |
+
 ### LSP & Code Navigation
 
 | Keymap       | Action                 |
