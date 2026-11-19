@@ -1,4 +1,27 @@
-local function open_terminal_in_current_dir()
+-- Where each placement opens its window. The splits use rightbelow, so they
+-- halve only the focused window, opening on its right (or below it), whatever
+-- the splitright/splitbelow options say.
+local terminal_placements = {
+	tab = "tabnew",
+	vsplit = "rightbelow vnew",
+	split = "rightbelow new",
+}
+
+-- Next free "Terminal N" number. Looks at every terminal buffer, not one per
+-- tab, so two terminals in one tab cannot be handed the same name (E95).
+local function next_terminal_number()
+	local highest = 0
+	for _, bufnr in ipairs(vim.api.nvim_list_bufs()) do
+		local n = vim.api.nvim_buf_get_name(bufnr):match("Terminal (%d+)$")
+		if n then
+			highest = math.max(highest, tonumber(n))
+		end
+	end
+	return highest + 1
+end
+
+-- placement: "tab" (default), "vsplit" or "split".
+local function open_terminal_in_current_dir(placement)
 	local current_file = vim.fn.expand("%:p")
 	local dir
 	if current_file ~= "" and vim.fn.filereadable(current_file) == 1 then
@@ -9,27 +32,15 @@ local function open_terminal_in_current_dir()
 		dir = vim.fn.getcwd()
 	end
 
-	-- Count existing terminal tabs
-	local terminal_count = 0
-	for _, tabnr in ipairs(vim.api.nvim_list_tabpages()) do
-		local buflist = vim.api.nvim_tabpage_list_wins(tabnr)
-		for _, winid in ipairs(buflist) do
-			local bufnr = vim.api.nvim_win_get_buf(winid)
-			if vim.api.nvim_buf_get_name(bufnr):match("Terminal") then
-				terminal_count = terminal_count + 1
-				break
-			end
-		end
-	end
+	local number = next_terminal_number()
 
-	-- Create a new tab
-	vim.cmd("tabnew")
+	vim.cmd(terminal_placements[placement] or terminal_placements.tab)
 
-	-- Open terminal in this tab
+	-- Open terminal in the new window
 	vim.cmd("terminal")
 
-	-- Rename the tab
-	vim.cmd("file Terminal " .. (terminal_count + 1))
+	-- Rename the buffer (it is also what the tab shows)
+	vim.cmd("file Terminal " .. number)
 
 	-- Change to the directory in the terminal
 	vim.fn.chansend(vim.b.terminal_job_id, "export NVIM_TERMINAL=1\r")
