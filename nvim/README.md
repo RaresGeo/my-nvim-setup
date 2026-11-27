@@ -55,6 +55,7 @@ After each update, it will open a floating window with some commands. You can fo
 - **Lua** (lua_ls)
 - **Deno** support
 - **Go** support (gopls)
+- **Rust** support (rust-analyzer)
 - Auto-completion with **blink.cmp** and **emmet-ls**
 - Auto-pairs with **nvim-autopairs**
 
@@ -161,6 +162,12 @@ You must install deno, which can be done via a package manager. i.e. `npm instal
 
 There are multiple ways of installing go, which will automatically come with `gopls`
 See documentation for your preferred way https://go.dev/doc/install
+
+### Rust
+
+`rust-analyzer` ships as a rustup component rather than with the toolchain itself:
+`rustup component add rust-analyzer`. Clippy runs as the on-save check, so add
+that component too (`rustup component add clippy`).
 
 ### Scala (Metals)
 

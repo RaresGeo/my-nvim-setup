@@ -19,6 +19,7 @@ return {
             "php", "php_only", "blade", -- intelephense, laravel_ls
             "bash", -- bash
             "go", -- gopls
+            "rust", "toml", -- rust_analyzer
             "scala", -- metals
             "solidity", -- solidity_ls
             "json", -- jsonls
