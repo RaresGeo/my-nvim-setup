@@ -40,7 +40,15 @@ vim.keymap.set("n", "<C-S-N>", function()
     harpoon:list():next()
 end, { desc = "Next harpoon file" })
 
-vim.keymap.set("n", "<leader>tt", open_terminal_in_current_dir, { desc = "Open terminal in current file's directory" })
+vim.keymap.set("n", "<leader>tt", function()
+    open_terminal_in_current_dir("tab")
+end, { desc = "Open terminal in a new tab" })
+vim.keymap.set("n", "<leader>tv", function()
+    open_terminal_in_current_dir("vsplit")
+end, { desc = "Open terminal to the right of the current window" })
+vim.keymap.set("n", "<leader>th", function()
+    open_terminal_in_current_dir("split")
+end, { desc = "Open terminal below the current window" })
 
 -- Telescope keymaps
 local builtin = require("telescope.builtin")
